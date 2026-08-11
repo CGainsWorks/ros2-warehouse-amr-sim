@@ -1,0 +1,14 @@
+# GENERATED FILE. Do not edit by hand.
+# Produced by simulation/generate_world.py; run `make world` after changing it.
+#
+# This is a geometric reference map built from the world's own constants,
+# NOT the output of the Cartographer mapping run. Run `make map` to build
+# the real one. See build_map() in generate_world.py for what is and is
+# not included and why.
+image: warehouse.pgm
+mode: trinary
+resolution: 0.050
+origin: [-16.000, -7.000, 0.0]
+negate: 0
+occupied_thresh: 0.65
+free_thresh: 0.25

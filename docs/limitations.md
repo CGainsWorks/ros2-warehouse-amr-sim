@@ -1,0 +1,150 @@
+# Limitations
+
+Stated plainly. Several of these are consequences of deliberate design choices
+and are recorded here rather than hidden.
+
+## Not yet run
+
+**The Gazebo simulation has not been executed.** Everything that runs without
+ROS — 171 unit tests, the segmentation benchmark, the scan-odometry benchmark —
+has been run, and its numbers appear in the docs. Everything requiring Gazebo has
+been implemented and reviewed but not executed, so:
+
+* `docs/localisation-accuracy.md` has no AMCL or EKF figures.
+* `docs/recovery-matrix.md` has an empty results table.
+* The README has no demo GIF.
+
+The launch files, Docker image and CI build job are written and the ROS packages
+are structured to build, but "builds and launches cleanly" is a claim that has
+not been verified on a machine with Gazebo. Expect to fix something the first
+time you run `make demo`.
+
+## Perception
+
+**No tracking.** `DetectedObject.id` is reassigned every scan by descending point
+count. It is stable within a message and meaningless across messages. There is no
+data association, so no object velocities and no prediction — a person walking
+towards the robot is a fresh detection every 100 ms. Nav2's costmap handles that
+adequately for avoidance, but anything wanting intent estimation needs a tracker
+this does not have.
+
+**No classification.** Clusters are geometric. Nothing distinguishes a person
+from a pallet; downstream consumers that care use dimensions and zone membership.
+A `class` field that is always zero would be worse than no field.
+
+**Connected objects cannot be separated.** A person standing within 0.35 m of a
+rack face merges into the racking, and no connectivity-based clustering can do
+otherwise. In the benchmark scene the person at (−3.0, 1.0) sits 0.10 m from an
+upright and does merge. The zone publisher is designed around this: it counts raw
+points inside the zone prism rather than trusting cluster instances, so a merged
+person still triggers the zone.
+
+**Distant objects fragment.** The range-adaptive radius pushes the limit from
+about 10 m to about 17.6 m, where the 0.80 m cap takes effect. Beyond that,
+objects fall apart into per-ring slices again. The cap is not removable: a larger
+radius exceeds the 1.1 m clearance between the aisle centreline and a rack face
+and starts merging people into racking, which is the failure the adaptation
+exists to prevent.
+
+**Ground removal keeps the bottom 6 cm of everything.** Points on the lowest
+6 cm of a wall, upright or pallet are geometrically indistinguishable from floor
+at the chosen threshold. Measured precision is 0.9608 for that reason. Harmless
+here, because those objects extend well above the threshold and are captured
+anyway.
+
+**One ground plane per scan.** A ramp, a dock leveller or a significant floor
+joint would be fitted as a single plane and the deviation classified as
+obstacle. Fine for a flat warehouse floor; wrong for a site with grade changes.
+
+## Localisation
+
+**A scan matched onto the wrong racking bay can be geometrically perfect.** In a
+long, uniform aisle a bay-offset match converges cleanly, reports high fitness
+and shows a low residual, because one bay genuinely does look exactly like the
+next. No local quality metric can separate those cases — the information is not
+present in the two scans. Only AMCL's global map and Cartographer's pose graph
+can resolve it.
+
+In *this* warehouse the aisle is only about ten bays long, and the end walls,
+roof columns and aisle pallets break the periodicity enough that a bay-offset
+match scores 0.58 against the 0.60 fitness gate and fails to converge, so it is
+caught. `test_a_bay_offset_seed_lands_a_bay_out_but_is_caught` pins that down.
+**That is a property of this floorplan, not a general guarantee.** A longer or
+more uniform aisle would defeat it.
+
+**Rejected scan intervals are dropped, not estimated.** When a match fails the
+gates the pose is held and nothing is published, leaving the interval to wheel
+odometry and the IMU. That is deliberate — inventing the motion would launder
+wheel odometry through a topic claiming to be LiDAR-derived — but it does mean
+the scan-odometry pose lags after a rejection. Measured reject rate on the
+benchmark traverse is 0.5%.
+
+**The scan matcher is 2D.** It assumes the sensor stays in a plane. Valid for a
+flat floor; a robot pitching over a threshold violates it.
+
+**Cartographer's `min_score` is raised to 0.68 from 0.55.** This trades loop
+closures for safety against bay aliasing. The cost is more residual drift in the
+final map. The alternative — a map folded a whole bay short — is not
+recoverable.
+
+## Navigation
+
+**Recovery attribution is by time window, not causation.** See
+`docs/recovery-matrix.md`. Nothing in Nav2 tags a recovery with its cause.
+
+**NavFn ignores the footprint.** Path safety comes entirely from the inflation
+layer. Adequate in a corridor; a planner that reasons about the footprint would
+be needed for tight non-axis-aligned manoeuvring.
+
+**The inflation cost step at 0.65 m is real.** Cost drops from 76 to 0 at the
+inflation boundary. Accepted deliberately; the reasoning is in
+`docs/parameter-rationale.md`.
+
+**No dynamic obstacle prediction.** DWB plans against the costmap as it is now.
+A person walking across the aisle is avoided reactively, not anticipated.
+
+**Single robot.** No fleet coordination, no traffic management, no deadlock
+resolution for two AMRs meeting in a 2.8 m aisle. The charger-bay zone exists
+partly to make the shape of that problem visible, but nothing acts on it.
+
+## Simulation
+
+**The shipped map is generated from geometry, not from SLAM.**
+`simulation/maps/warehouse.pgm` is rasterised from the world's own constants so
+that a fresh clone can run the demo without first sitting through a mapping run,
+and so that a navigation problem can be isolated from a mapping one. It is
+labelled as such in its own YAML header. `make map` produces the real
+Cartographer map, which will differ by Cartographer's error — comparing them is
+the point.
+
+**People are static cylinders teleported on a schedule.** A `<plugin>`-driven
+walker would move unrepeatably and make the recovery matrix impossible to
+reproduce. The cost is that no genuinely continuous dynamic motion is simulated.
+
+**Gazebo Classic 11, not Ignition.** The plugins used — `gazebo_ros_diff_drive`,
+`gazebo_ros_ray_sensor`, `gazebo_ros_p3d` — are Classic. The Ignition equivalents
+have different names and parameters. This pins the stack to ROS 2 Humble.
+
+**Simulated sensor noise is representative, not characterised.** 1 cm LiDAR
+range noise and the IMU noise densities are typical of the hardware class this
+targets; they are not measured from a specific unit. Numbers from this repository
+describe this simulation, and transfer to hardware only as far as that model
+holds.
+
+## Evaluation
+
+**Offline metrics use a synthetic scene, not recorded data.** Deliberate — see
+`docs/segmentation.md` — but it means the segmentation numbers describe an exact
+ray-traced world with no reflectivity effects, no multi-path, no dust, and no
+mixed pixels at object edges. Real LiDAR has all four, and all four make
+segmentation harder.
+
+**NEES uses a diagonal covariance approximation.** The pose logger records only
+the diagonal, so the cross-covariance is unavailable. This overstates NEES when x
+and y errors are correlated, which in a corridor they are. The consistency check
+is therefore conservative — it will call a filter overconfident slightly more
+readily than the truth warrants.
+
+**Latency figures are single-machine.** Measured on one core of a laptop CPU with
+no other load. A real robot's compute has a costmap, a planner and a controller
+competing for the same cores.

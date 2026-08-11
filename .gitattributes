@@ -1,0 +1,52 @@
+# Normalise line endings so the repo behaves the same on Linux and Windows.
+* text=auto eol=lf
+
+# Shell scripts and ROS launch files must stay LF or they break inside the
+# container.
+*.sh        text eol=lf
+*.py        text eol=lf
+*.lua       text eol=lf
+*.yaml      text eol=lf
+*.yml       text eol=lf
+*.xml       text eol=lf
+*.urdf      text eol=lf
+*.xacro     text eol=lf
+*.sdf       text eol=lf
+*.world     text eol=lf
+
+# ---------------------------------------------------------------------------
+# Git LFS. Anything below is large, binary, or both, and must never enter the
+# ordinary Git history. See docs/limitations.md for what is intentionally not
+# shipped in this repository at all.
+# ---------------------------------------------------------------------------
+
+# Recorded runs
+*.bag       filter=lfs diff=lfs merge=lfs -text
+*.db3       filter=lfs diff=lfs merge=lfs -text
+*.mcap      filter=lfs diff=lfs merge=lfs -text
+
+# Point-cloud data
+*.pcd       filter=lfs diff=lfs merge=lfs -text
+*.ply       filter=lfs diff=lfs merge=lfs -text
+*.bin       filter=lfs diff=lfs merge=lfs -text
+*.npz       filter=lfs diff=lfs merge=lfs -text
+
+# Model weights, should any be added later
+*.pt        filter=lfs diff=lfs merge=lfs -text
+*.pth       filter=lfs diff=lfs merge=lfs -text
+*.onnx      filter=lfs diff=lfs merge=lfs -text
+
+# Meshes and media
+*.dae       filter=lfs diff=lfs merge=lfs -text
+*.stl       filter=lfs diff=lfs merge=lfs -text
+*.gif       filter=lfs diff=lfs merge=lfs -text
+*.mp4       filter=lfs diff=lfs merge=lfs -text
+*.png       filter=lfs diff=lfs merge=lfs -text
+*.jpg       filter=lfs diff=lfs merge=lfs -text
+
+# NOT LFS: *.pgm. The occupancy map the demo ships with is about 180 kB, which
+# is small enough to track directly, and putting it in LFS would mean a clone
+# without git-lfs installed gets a pointer file where the map should be — so
+# `make demo` would fail on a clean machine with a confusing map_server error.
+# A one-command demo that depends on an optional tool being installed is not a
+# one-command demo.

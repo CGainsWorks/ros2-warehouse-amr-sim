@@ -1,0 +1,100 @@
+<!--
+  NavigateToPose with an explicit, ordered recovery sequence.
+
+  Structure:
+
+    RecoveryNode (6 retries)
+     |- PipelineSequence "NavigateWithReplanning"   <- the normal path
+     |   |- RateController 1 Hz -> ComputePathToPose (with its own recovery)
+     |   \- FollowPath (with its own recovery)
+     \- ReactiveFallback "RecoveryFallback"          <- runs only on failure
+         |- GoalUpdated                              <- bail out if a new goal arrived
+         \- RoundRobin "RecoveryActions"
+
+  THE RECOVERY ORDER IS THE DESIGN. Actions are ordered cheapest-and-least-
+  disruptive first, and each one addresses a different cause of failure:
+
+    1. ClearLocalCostmap   Cheapest possible. Fixes the most common cause by
+                           far: a stale obstacle left in the local costmap by a
+                           person who has already walked away, or a smear left
+                           by a momentary localisation jump between racking
+                           bays. Costs nothing and does not move the robot.
+
+    2. ClearGlobalCostmap  Same idea one level up, for when the global planner
+                           has convinced itself the aisle is blocked. Separated
+                           from step 1 rather than combined because clearing the
+                           global costmap discards genuine knowledge about
+                           obstacles outside sensor range, so it is worth trying
+                           the local clear on its own first.
+
+    3. Spin (90 deg)       First action that moves. A 90 degree rotation sweeps
+                           the 2D LiDAR across space the robot has been
+                           ignoring and re-observes the aisle from a new angle,
+                           which both refills the costmap and — because the
+                           racking bays alias — gives AMCL a genuinely new
+                           measurement to work with. Not a full 360: in a 2.8 m
+                           aisle a full spin costs several seconds and the
+                           second half of it observes nothing the first half
+                           did not.
+
+    4. BackUp (0.30 m)     For the case the spin cannot fix: the robot is
+                           already inside the inflation band, or nose-first into
+                           a pallet, so no forward trajectory scores. Backing up
+                           restores room to manoeuvre. Deliberately after the
+                           spin because reversing is blind — there is no
+                           rear-facing sensor coverage below the 2D LiDAR plane.
+
+    5. Wait (5 s)          Last resort, and the right answer more often than it
+                           looks. If the aisle is blocked by a person or a
+                           forklift, every other recovery is noise and the
+                           blockage clears on its own. Waiting is also the only
+                           recovery that cannot make the situation worse.
+
+  RoundRobin, not Sequence: each failure runs the *next* action rather than
+  replaying the whole list from the start. Six retries therefore walk through
+  all five actions and return to the local costmap clear once, rather than
+  clearing the local costmap six times.
+
+  The ReactiveFallback wrapper around GoalUpdated aborts recovery immediately if
+  a new goal arrives, so a robot mid-spin does not finish spinning before
+  accepting new work.
+-->
+<root main_tree_to_execute="MainTree">
+  <BehaviorTree ID="MainTree">
+    <RecoveryNode number_of_retries="6" name="NavigateRecovery">
+
+      <PipelineSequence name="NavigateWithReplanning">
+        <!-- Replan at 1 Hz. Faster gains nothing: the global costmap only
+             updates at 1 Hz, so a 5 Hz replan repeats the same computation
+             against identical input. -->
+        <RateController hz="1.0">
+          <RecoveryNode number_of_retries="1" name="ComputePathToPose">
+            <ComputePathToPose goal="{goal}" path="{path}" planner_id="GridBased"/>
+            <ClearEntireCostmap name="ClearGlobalCostmap-Context"
+                                service_name="global_costmap/clear_entirely_global_costmap"/>
+          </RecoveryNode>
+        </RateController>
+
+        <RecoveryNode number_of_retries="1" name="FollowPath">
+          <FollowPath path="{path}" controller_id="FollowPath"/>
+          <ClearEntireCostmap name="ClearLocalCostmap-Context"
+                              service_name="local_costmap/clear_entirely_local_costmap"/>
+        </RecoveryNode>
+      </PipelineSequence>
+
+      <ReactiveFallback name="RecoveryFallback">
+        <GoalUpdated/>
+        <RoundRobin name="RecoveryActions">
+          <ClearEntireCostmap name="ClearLocalCostmap-Recovery"
+                              service_name="local_costmap/clear_entirely_local_costmap"/>
+          <ClearEntireCostmap name="ClearGlobalCostmap-Recovery"
+                              service_name="global_costmap/clear_entirely_global_costmap"/>
+          <Spin spin_dist="1.57"/>
+          <BackUp backup_dist="0.30" backup_speed="0.05"/>
+          <Wait wait_duration="5"/>
+        </RoundRobin>
+      </ReactiveFallback>
+
+    </RecoveryNode>
+  </BehaviorTree>
+</root>

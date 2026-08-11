@@ -1,0 +1,2261 @@
+<?xml version="1.0" ?>
+<!--
+  GENERATED FILE. Do not edit by hand.
+  Produced by simulation/generate_world.py; run `make world` after changing it.
+
+  Geometry here is kept identical to amr_perception.core.synthetic.warehouse_scene
+  so that offline segmentation metrics describe the same warehouse the simulator
+  does.
+-->
+<sdf version="1.6">
+  <world name="warehouse">
+
+    <!-- 1 kHz physics with 10 real-time update rate factor headroom. The
+         default 1 ms step is kept: a larger step lets the caster spheres tunnel
+         through the floor at speed, which presents as the robot randomly
+         falling through the world. -->
+    <physics name="default_physics" default="true" type="ode">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+      <real_time_update_rate>1000</real_time_update_rate>
+    </physics>
+
+    <plugin name="gazebo_ros_state" filename="libgazebo_ros_state.so">
+      <ros><namespace>/gazebo</namespace></ros>
+      <update_rate>50.0</update_rate>
+    </plugin>
+
+    <include><uri>model://sun</uri></include>
+    <include><uri>model://ground_plane</uri></include>
+
+    <scene>
+      <ambient>0.5 0.5 0.5 1</ambient>
+      <background>0.75 0.78 0.82 1</background>
+      <shadows>false</shadows>
+    </scene>
+
+    <model name="wall_west">
+      <static>true</static>
+      <pose>-15.1000 0.0000 3.0000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.2000 12.4000 6.0000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.2000 12.4000 6.0000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/Grey</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="wall_east">
+      <static>true</static>
+      <pose>15.1000 0.0000 3.0000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.2000 12.4000 6.0000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.2000 12.4000 6.0000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/Grey</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="wall_south">
+      <static>true</static>
+      <pose>0.0000 -6.1000 3.0000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>30.4000 0.2000 6.0000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>30.4000 0.2000 6.0000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/Grey</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="wall_north">
+      <static>true</static>
+      <pose>0.0000 6.1000 3.0000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>30.4000 0.2000 6.0000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>30.4000 0.2000 6.0000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/Grey</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="upright_s_0_0">
+      <static>true</static>
+      <pose>-13.5000 -1.4000 1.1000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/DarkGrey</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="upright_s_0_1">
+      <static>true</static>
+      <pose>-13.5000 -2.3000 1.1000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/DarkGrey</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="upright_s_1_0">
+      <static>true</static>
+      <pose>-10.8000 -1.4000 1.1000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/DarkGrey</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="upright_s_1_1">
+      <static>true</static>
+      <pose>-10.8000 -2.3000 1.1000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/DarkGrey</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="upright_s_2_0">
+      <static>true</static>
+      <pose>-8.1000 -1.4000 1.1000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/DarkGrey</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="upright_s_2_1">
+      <static>true</static>
+      <pose>-8.1000 -2.3000 1.1000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/DarkGrey</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="upright_s_3_0">
+      <static>true</static>
+      <pose>-5.4000 -1.4000 1.1000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/DarkGrey</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="upright_s_3_1">
+      <static>true</static>
+      <pose>-5.4000 -2.3000 1.1000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/DarkGrey</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="upright_s_4_0">
+      <static>true</static>
+      <pose>-2.7000 -1.4000 1.1000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/DarkGrey</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="upright_s_4_1">
+      <static>true</static>
+      <pose>-2.7000 -2.3000 1.1000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/DarkGrey</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="upright_s_5_0">
+      <static>true</static>
+      <pose>0.0000 -1.4000 1.1000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/DarkGrey</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="upright_s_5_1">
+      <static>true</static>
+      <pose>0.0000 -2.3000 1.1000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/DarkGrey</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="upright_s_6_0">
+      <static>true</static>
+      <pose>2.7000 -1.4000 1.1000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/DarkGrey</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="upright_s_6_1">
+      <static>true</static>
+      <pose>2.7000 -2.3000 1.1000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/DarkGrey</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="upright_s_7_0">
+      <static>true</static>
+      <pose>5.4000 -1.4000 1.1000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/DarkGrey</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="upright_s_7_1">
+      <static>true</static>
+      <pose>5.4000 -2.3000 1.1000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/DarkGrey</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="upright_s_8_0">
+      <static>true</static>
+      <pose>8.1000 -1.4000 1.1000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/DarkGrey</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="upright_s_8_1">
+      <static>true</static>
+      <pose>8.1000 -2.3000 1.1000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/DarkGrey</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="upright_s_9_0">
+      <static>true</static>
+      <pose>10.8000 -1.4000 1.1000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/DarkGrey</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="upright_s_9_1">
+      <static>true</static>
+      <pose>10.8000 -2.3000 1.1000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/DarkGrey</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="upright_s_10_0">
+      <static>true</static>
+      <pose>13.5000 -1.4000 1.1000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/DarkGrey</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="upright_s_10_1">
+      <static>true</static>
+      <pose>13.5000 -2.3000 1.1000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/DarkGrey</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="beam_s_0">
+      <static>true</static>
+      <pose>-0.0250 -1.8500 0.8400 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>27.0500 0.9000 0.0800</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>27.0500 0.9000 0.0800</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/Orange</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="beam_s_1">
+      <static>true</static>
+      <pose>-0.0250 -1.8500 1.6400 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>27.0500 0.9000 0.0800</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>27.0500 0.9000 0.0800</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/Orange</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="pallet_s_0_0">
+      <static>true</static>
+      <pose>-12.1500 -1.8500 0.9550 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/Wood</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="carton_s_0_0">
+      <static>true</static>
+      <pose>-12.1500 -1.8500 1.3300 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.0000 0.7000 0.6000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.0000 0.7000 0.6000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/WoodPallet</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="pallet_s_0_1">
+      <static>true</static>
+      <pose>-12.1500 -1.8500 1.7550 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/Wood</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="carton_s_0_1">
+      <static>true</static>
+      <pose>-12.1500 -1.8500 2.1300 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.0000 0.7000 0.6000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.0000 0.7000 0.6000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/WoodPallet</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="pallet_s_1_0">
+      <static>true</static>
+      <pose>-9.4500 -1.8500 0.9550 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/Wood</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="carton_s_1_0">
+      <static>true</static>
+      <pose>-9.4500 -1.8500 1.3300 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.0000 0.7000 0.6000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.0000 0.7000 0.6000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/WoodPallet</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="pallet_s_1_1">
+      <static>true</static>
+      <pose>-9.4500 -1.8500 1.7550 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/Wood</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="carton_s_1_1">
+      <static>true</static>
+      <pose>-9.4500 -1.8500 2.1300 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.0000 0.7000 0.6000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.0000 0.7000 0.6000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/WoodPallet</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="pallet_s_3_0">
+      <static>true</static>
+      <pose>-4.0500 -1.8500 0.9550 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/Wood</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="carton_s_3_0">
+      <static>true</static>
+      <pose>-4.0500 -1.8500 1.3300 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.0000 0.7000 0.6000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.0000 0.7000 0.6000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/WoodPallet</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="pallet_s_3_1">
+      <static>true</static>
+      <pose>-4.0500 -1.8500 1.7550 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/Wood</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="carton_s_3_1">
+      <static>true</static>
+      <pose>-4.0500 -1.8500 2.1300 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.0000 0.7000 0.6000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.0000 0.7000 0.6000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/WoodPallet</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="pallet_s_4_0">
+      <static>true</static>
+      <pose>-1.3500 -1.8500 0.9550 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/Wood</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="carton_s_4_0">
+      <static>true</static>
+      <pose>-1.3500 -1.8500 1.3300 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.0000 0.7000 0.6000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.0000 0.7000 0.6000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/WoodPallet</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="pallet_s_4_1">
+      <static>true</static>
+      <pose>-1.3500 -1.8500 1.7550 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/Wood</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="carton_s_4_1">
+      <static>true</static>
+      <pose>-1.3500 -1.8500 2.1300 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.0000 0.7000 0.6000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.0000 0.7000 0.6000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/WoodPallet</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="pallet_s_6_0">
+      <static>true</static>
+      <pose>4.0500 -1.8500 0.9550 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/Wood</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="carton_s_6_0">
+      <static>true</static>
+      <pose>4.0500 -1.8500 1.3300 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.0000 0.7000 0.6000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.0000 0.7000 0.6000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/WoodPallet</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="pallet_s_6_1">
+      <static>true</static>
+      <pose>4.0500 -1.8500 1.7550 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/Wood</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="carton_s_6_1">
+      <static>true</static>
+      <pose>4.0500 -1.8500 2.1300 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.0000 0.7000 0.6000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.0000 0.7000 0.6000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/WoodPallet</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="pallet_s_7_0">
+      <static>true</static>
+      <pose>6.7500 -1.8500 0.9550 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/Wood</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="carton_s_7_0">
+      <static>true</static>
+      <pose>6.7500 -1.8500 1.3300 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.0000 0.7000 0.6000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.0000 0.7000 0.6000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/WoodPallet</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="pallet_s_7_1">
+      <static>true</static>
+      <pose>6.7500 -1.8500 1.7550 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/Wood</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="carton_s_7_1">
+      <static>true</static>
+      <pose>6.7500 -1.8500 2.1300 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.0000 0.7000 0.6000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.0000 0.7000 0.6000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/WoodPallet</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="pallet_s_9_0">
+      <static>true</static>
+      <pose>12.1500 -1.8500 0.9550 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/Wood</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="carton_s_9_0">
+      <static>true</static>
+      <pose>12.1500 -1.8500 1.3300 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.0000 0.7000 0.6000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.0000 0.7000 0.6000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/WoodPallet</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="pallet_s_9_1">
+      <static>true</static>
+      <pose>12.1500 -1.8500 1.7550 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/Wood</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="carton_s_9_1">
+      <static>true</static>
+      <pose>12.1500 -1.8500 2.1300 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.0000 0.7000 0.6000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.0000 0.7000 0.6000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/WoodPallet</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="upright_n_0_0">
+      <static>true</static>
+      <pose>-13.5000 1.4000 1.1000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/DarkGrey</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="upright_n_0_1">
+      <static>true</static>
+      <pose>-13.5000 2.3000 1.1000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/DarkGrey</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="upright_n_1_0">
+      <static>true</static>
+      <pose>-10.8000 1.4000 1.1000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/DarkGrey</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="upright_n_1_1">
+      <static>true</static>
+      <pose>-10.8000 2.3000 1.1000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/DarkGrey</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="upright_n_2_0">
+      <static>true</static>
+      <pose>-8.1000 1.4000 1.1000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/DarkGrey</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="upright_n_2_1">
+      <static>true</static>
+      <pose>-8.1000 2.3000 1.1000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/DarkGrey</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="upright_n_3_0">
+      <static>true</static>
+      <pose>-5.4000 1.4000 1.1000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/DarkGrey</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="upright_n_3_1">
+      <static>true</static>
+      <pose>-5.4000 2.3000 1.1000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/DarkGrey</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="upright_n_4_0">
+      <static>true</static>
+      <pose>-2.7000 1.4000 1.1000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/DarkGrey</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="upright_n_4_1">
+      <static>true</static>
+      <pose>-2.7000 2.3000 1.1000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/DarkGrey</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="upright_n_5_0">
+      <static>true</static>
+      <pose>0.0000 1.4000 1.1000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/DarkGrey</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="upright_n_5_1">
+      <static>true</static>
+      <pose>0.0000 2.3000 1.1000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/DarkGrey</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="upright_n_6_0">
+      <static>true</static>
+      <pose>2.7000 1.4000 1.1000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/DarkGrey</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="upright_n_6_1">
+      <static>true</static>
+      <pose>2.7000 2.3000 1.1000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/DarkGrey</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="upright_n_7_0">
+      <static>true</static>
+      <pose>5.4000 1.4000 1.1000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/DarkGrey</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="upright_n_7_1">
+      <static>true</static>
+      <pose>5.4000 2.3000 1.1000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/DarkGrey</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="upright_n_8_0">
+      <static>true</static>
+      <pose>8.1000 1.4000 1.1000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/DarkGrey</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="upright_n_8_1">
+      <static>true</static>
+      <pose>8.1000 2.3000 1.1000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/DarkGrey</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="upright_n_9_0">
+      <static>true</static>
+      <pose>10.8000 1.4000 1.1000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/DarkGrey</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="upright_n_9_1">
+      <static>true</static>
+      <pose>10.8000 2.3000 1.1000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/DarkGrey</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="upright_n_10_0">
+      <static>true</static>
+      <pose>13.5000 1.4000 1.1000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/DarkGrey</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="upright_n_10_1">
+      <static>true</static>
+      <pose>13.5000 2.3000 1.1000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1000 0.1000 2.2000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/DarkGrey</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="beam_n_0">
+      <static>true</static>
+      <pose>-0.0250 1.8500 0.8400 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>27.0500 0.9000 0.0800</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>27.0500 0.9000 0.0800</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/Orange</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="beam_n_1">
+      <static>true</static>
+      <pose>-0.0250 1.8500 1.6400 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>27.0500 0.9000 0.0800</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>27.0500 0.9000 0.0800</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/Orange</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="pallet_n_0_0">
+      <static>true</static>
+      <pose>-12.1500 1.8500 0.9550 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/Wood</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="carton_n_0_0">
+      <static>true</static>
+      <pose>-12.1500 1.8500 1.3300 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.0000 0.7000 0.6000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.0000 0.7000 0.6000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/WoodPallet</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="pallet_n_0_1">
+      <static>true</static>
+      <pose>-12.1500 1.8500 1.7550 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/Wood</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="carton_n_0_1">
+      <static>true</static>
+      <pose>-12.1500 1.8500 2.1300 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.0000 0.7000 0.6000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.0000 0.7000 0.6000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/WoodPallet</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="pallet_n_1_0">
+      <static>true</static>
+      <pose>-9.4500 1.8500 0.9550 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/Wood</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="carton_n_1_0">
+      <static>true</static>
+      <pose>-9.4500 1.8500 1.3300 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.0000 0.7000 0.6000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.0000 0.7000 0.6000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/WoodPallet</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="pallet_n_1_1">
+      <static>true</static>
+      <pose>-9.4500 1.8500 1.7550 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/Wood</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="carton_n_1_1">
+      <static>true</static>
+      <pose>-9.4500 1.8500 2.1300 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.0000 0.7000 0.6000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.0000 0.7000 0.6000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/WoodPallet</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="pallet_n_3_0">
+      <static>true</static>
+      <pose>-4.0500 1.8500 0.9550 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/Wood</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="carton_n_3_0">
+      <static>true</static>
+      <pose>-4.0500 1.8500 1.3300 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.0000 0.7000 0.6000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.0000 0.7000 0.6000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/WoodPallet</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="pallet_n_3_1">
+      <static>true</static>
+      <pose>-4.0500 1.8500 1.7550 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/Wood</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="carton_n_3_1">
+      <static>true</static>
+      <pose>-4.0500 1.8500 2.1300 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.0000 0.7000 0.6000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.0000 0.7000 0.6000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/WoodPallet</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="pallet_n_4_0">
+      <static>true</static>
+      <pose>-1.3500 1.8500 0.9550 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/Wood</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="carton_n_4_0">
+      <static>true</static>
+      <pose>-1.3500 1.8500 1.3300 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.0000 0.7000 0.6000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.0000 0.7000 0.6000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/WoodPallet</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="pallet_n_4_1">
+      <static>true</static>
+      <pose>-1.3500 1.8500 1.7550 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/Wood</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="carton_n_4_1">
+      <static>true</static>
+      <pose>-1.3500 1.8500 2.1300 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.0000 0.7000 0.6000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.0000 0.7000 0.6000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/WoodPallet</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="pallet_n_6_0">
+      <static>true</static>
+      <pose>4.0500 1.8500 0.9550 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/Wood</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="carton_n_6_0">
+      <static>true</static>
+      <pose>4.0500 1.8500 1.3300 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.0000 0.7000 0.6000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.0000 0.7000 0.6000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/WoodPallet</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="pallet_n_6_1">
+      <static>true</static>
+      <pose>4.0500 1.8500 1.7550 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/Wood</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="carton_n_6_1">
+      <static>true</static>
+      <pose>4.0500 1.8500 2.1300 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.0000 0.7000 0.6000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.0000 0.7000 0.6000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/WoodPallet</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="pallet_n_7_0">
+      <static>true</static>
+      <pose>6.7500 1.8500 0.9550 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/Wood</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="carton_n_7_0">
+      <static>true</static>
+      <pose>6.7500 1.8500 1.3300 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.0000 0.7000 0.6000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.0000 0.7000 0.6000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/WoodPallet</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="pallet_n_7_1">
+      <static>true</static>
+      <pose>6.7500 1.8500 1.7550 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/Wood</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="carton_n_7_1">
+      <static>true</static>
+      <pose>6.7500 1.8500 2.1300 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.0000 0.7000 0.6000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.0000 0.7000 0.6000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/WoodPallet</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="pallet_n_9_0">
+      <static>true</static>
+      <pose>12.1500 1.8500 0.9550 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/Wood</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="carton_n_9_0">
+      <static>true</static>
+      <pose>12.1500 1.8500 1.3300 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.0000 0.7000 0.6000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.0000 0.7000 0.6000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/WoodPallet</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="pallet_n_9_1">
+      <static>true</static>
+      <pose>12.1500 1.8500 1.7550 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/Wood</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="carton_n_9_1">
+      <static>true</static>
+      <pose>12.1500 1.8500 2.1300 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.0000 0.7000 0.6000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.0000 0.7000 0.6000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/WoodPallet</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="column_0">
+      <static>true</static>
+      <pose>-7.5000 5.2000 3.0000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><cylinder><radius>0.1500</radius><length>6.0000</length></cylinder></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><cylinder><radius>0.1500</radius><length>6.0000</length></cylinder></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/DarkGrey</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="column_1">
+      <static>true</static>
+      <pose>7.5000 5.2000 3.0000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><cylinder><radius>0.1500</radius><length>6.0000</length></cylinder></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><cylinder><radius>0.1500</radius><length>6.0000</length></cylinder></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/DarkGrey</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="aisle_pallet_0">
+      <static>true</static>
+      <pose>4.0000 0.3500 0.0750 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/Wood</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="aisle_stack_0">
+      <static>true</static>
+      <pose>4.0000 0.3500 0.5500 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.0000 0.6000 0.8000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.0000 0.6000 0.8000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/WoodPallet</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="aisle_pallet_1">
+      <static>true</static>
+      <pose>-6.5000 -0.4000 0.0750 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.2000 0.8000 0.1500</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/Wood</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="aisle_stack_1">
+      <static>true</static>
+      <pose>-6.5000 -0.4000 0.5500 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.0000 0.6000 0.8000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.0000 0.6000 0.8000</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/WoodPallet</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="person_0">
+      <static>true</static>
+      <pose>8.0000 0.0000 0.8750 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><cylinder><radius>0.2500</radius><length>1.7500</length></cylinder></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><cylinder><radius>0.2500</radius><length>1.7500</length></cylinder></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/Red</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="person_1">
+      <static>true</static>
+      <pose>-3.0000 1.0000 0.8750 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><cylinder><radius>0.2500</radius><length>1.7500</length></cylinder></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><cylinder><radius>0.2500</radius><length>1.7500</length></cylinder></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/Red</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="person_2">
+      <static>true</static>
+      <pose>14.0000 -0.8000 0.8750 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><cylinder><radius>0.2500</radius><length>1.7500</length></cylinder></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><cylinder><radius>0.2500</radius><length>1.7500</length></cylinder></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/Red</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+  </world>
+</sdf>

@@ -1,0 +1,17 @@
+# The demo mission: run the aisle, stopping at each pick face.
+#
+# Poses are on the aisle centreline, not at the rack face. A differential-drive
+# robot parked hard against a face has to reverse blind to leave, and the pick
+# faces here are worked by a person reaching in, not by the robot itself.
+#
+# Yaw is the heading the robot ends the leg on. Alternating headings at the far
+# waypoints exercise the in-place rotation path and the RotateToGoal critic,
+# which a mission that only ever drives forwards never touches.
+
+waypoints:
+  - {x: -9.45,  y: 0.0, yaw: 0.0}     # abreast of pick_face_*_0
+  - {x: -1.35,  y: 0.0, yaw: 0.0}     # abreast of pick_face_*_1
+  - {x:  6.75,  y: 0.0, yaw: 0.0}     # abreast of pick_face_*_2
+  - {x: 12.50,  y: 0.0, yaw: 1.5708}  # east end, turn across the aisle
+  - {x:  0.00,  y: 0.0, yaw: 3.1416}  # back down the aisle, facing west
+  - {x: -13.85, y: 0.0, yaw: 3.1416}  # charger bay

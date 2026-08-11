@@ -1,0 +1,58 @@
+# Perception parameters. Every value here is justified in
+# docs/parameter-rationale.md; the short version is inline.
+
+/**/segmentation_node:
+  ros__parameters:
+    target_frame: base_footprint
+
+    # One scan period at 10 Hz. Waiting longer for a transform does not make the
+    # answer better, it makes it late.
+    transform_timeout_sec: 0.10
+
+    # 6 sigma on the simulated LiDAR's 0.01 m range noise, plus margin for floor
+    # flatness. Below ~0.04 m the outer rings start being classified as
+    # obstacles because grazing incidence inflates their range error.
+    ground_distance_threshold: 0.06
+
+    # The floor is flat; this covers sensor pitch under acceleration only.
+    ground_max_tilt_deg: 10.0
+    ground_max_iterations: 300
+    ground_score_subsample: 4000
+
+    # Roof steel, lighting gantry and sprinkler pipework sit above this. The
+    # tallest thing the robot must avoid is a 2.2 m racking upright.
+    max_obstacle_height: 3.0
+
+    # Between two hard limits: below ~0.32 m a person at 12 m fragments across
+    # LiDAR rings; above ~0.5 m adjacent racking uprights merge.
+    cluster_tolerance: 0.35
+    cluster_min_points: 25
+    cluster_max_points: 200000
+    cluster_voxel_size: 0.12
+
+    # Floor tape, cable covers and the odd dropped shrink-wrap are all under
+    # 10 cm and are not obstacles.
+    cluster_min_height: 0.10
+
+    publish_debug_clouds: true
+    publish_markers: true
+
+/**/zone_occupancy_node:
+  ros__parameters:
+    map_frame: map
+    transform_timeout_sec: 0.10
+
+    # Asymmetric on purpose: 200 ms to notice someone at 10 Hz, 500 ms to forget
+    # them, which covers the worst occlusion gap behind a racking upright.
+    enter_frames: 2
+    exit_frames: 5
+
+    cluster_tolerance: 0.35
+    cluster_min_points: 25
+    cluster_voxel_size: 0.12
+
+    # 0.5 m standard deviation. Past this the zones cannot be placed accurately
+    # enough for their states to be worth trusting.
+    max_position_variance: 0.25
+
+    publish_markers: true

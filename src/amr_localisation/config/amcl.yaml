@@ -1,0 +1,169 @@
+# AMCL. Owns map -> odom; the EKF owns odom -> base_link.
+#
+# The single most important thing about this file is that AMCL's odometry input
+# is the EKF output, not raw wheel odometry. That changes what the alpha motion
+# noise parameters should be: they describe the noise of the odometry source
+# AMCL is given, and the EKF's output is markedly better than the encoders alone
+# because it has already had the IMU and the scan matcher applied to it. Leaving
+# the alphas at values tuned for raw encoders makes the particle cloud far more
+# diffuse than the evidence warrants, which shows up as a pose that wanders
+# within a spread it should not have.
+
+amcl:
+  ros__parameters:
+    use_sim_time: true
+
+    base_frame_id: base_footprint
+    odom_frame_id: odom
+    global_frame_id: map
+    scan_topic: /scan
+
+    # -----------------------------------------------------------------
+    # Motion model.
+    #
+    # Differential drive. alpha1/alpha2 are rotation noise from rotation and
+    # from translation; alpha3/alpha4 are translation noise from translation and
+    # from rotation.
+    #
+    # alpha1 = 0.05: yaw error per unit yaw. Low, because the EKF's yaw is
+    #   constrained by both the gyro and the scan matcher.
+    # alpha2 = 0.05: yaw error per unit translation. Low for the same reason;
+    #   this is the term that captures a drive wheel slipping and turning the
+    #   robot without it knowing, which the scan matcher catches.
+    # alpha3 = 0.05: translation error per unit translation. This is the one the
+    #   encoders are genuinely good at.
+    # alpha4 = 0.05: translation error per unit rotation.
+    # alpha5 = 0.05: strafe noise, differential-drive only. Nominally zero for
+    #   a non-holonomic base but left small and non-zero, because a robot pushed
+    #   sideways by a pallet truck does exactly this and a zero here means the
+    #   filter cannot represent it at all.
+    # -----------------------------------------------------------------
+    robot_model_type: "nav2_amcl::DifferentialMotionModel"
+    alpha1: 0.05
+    alpha2: 0.05
+    alpha3: 0.05
+    alpha4: 0.05
+    alpha5: 0.05
+
+    # -----------------------------------------------------------------
+    # Sensor model.
+    #
+    # likelihood_field over beam: the beam model has to ray-trace every beam
+    # against the map for every particle, which at 2000 particles does not fit
+    # in a 10 Hz budget. The likelihood field precomputes an obstacle distance
+    # map once and reduces each beam to a lookup. The beam model's advantage is
+    # that it models unexpected obstacles explicitly, which matters in a corridor
+    # full of people; the likelihood field handles that adequately via z_rand and
+    # by capping max_beams.
+    # -----------------------------------------------------------------
+    laser_model_type: "likelihood_field"
+
+    # z_hit + z_rand = 1.0. 0.5/0.5 is a deliberately conservative split for a
+    # warehouse: half the weight allows for a return that the static map cannot
+    # explain, because a large fraction of what the LiDAR sees — pallets in the
+    # aisle, people, a parked forklift — genuinely is not in the map. Pushing
+    # z_hit towards 0.9, which is common for tidy corridors, makes the filter
+    # over-penalise particles for observing real but unmapped objects.
+    z_hit: 0.5
+    z_rand: 0.5
+    # Unused by likelihood_field but read at startup; left at library defaults.
+    z_max: 0.05
+    z_short: 0.05
+    lambda_short: 0.1
+
+    # Standard deviation of the Gaussian on the obstacle distance, metres.
+    # Roughly the map resolution (0.05 m) times four: wide enough to tolerate the
+    # discretisation of the occupancy grid and small map-vs-world discrepancies,
+    # narrow enough to still discriminate between adjacent racking bays.
+    sigma_hit: 0.2
+
+    # Distance beyond which the likelihood field is not computed. 2.0 m keeps
+    # the precomputed field small; beyond that the likelihood is flat anyway.
+    laser_likelihood_max_dist: 2.0
+
+    laser_min_range: 0.10
+    # Deliberately below the sensor's 25 m maximum. Long returns down a 30 m
+    # aisle are the least informative beams in the scan — they hit the far wall,
+    # which every particle along the aisle agrees about — and they are the most
+    # affected by small yaw errors. Capping at 20 m spends the beam budget on
+    # nearer structure that actually discriminates between hypotheses.
+    laser_max_range: 20.0
+
+    # 120 of the 720 beams, evenly subsampled. Adjacent beams in a 720-beam scan
+    # are highly correlated — they usually hit the same surface — so using all
+    # of them inflates confidence without adding information, and costs 6x the
+    # compute. 120 beams at 0.5 degree effective spacing still resolves a 0.1 m
+    # racking upright at 11 m.
+    max_beams: 120
+
+    # -----------------------------------------------------------------
+    # Particle filter.
+    # -----------------------------------------------------------------
+    # 500-2000 adaptive. The lower bound is what is needed to track a converged
+    # pose in a 30 x 12 m space; the upper bound is what global localisation
+    # needs when the initial pose is unknown, and is where the filter sits for
+    # the first few seconds after a relocalisation request.
+    min_particles: 500
+    max_particles: 2000
+
+    # KLD sampling bounds, controlling how aggressively the particle count is
+    # reduced once the cloud converges.
+    pf_err: 0.05
+    pf_z: 0.99
+
+    # Resample every filter update. The alternative, resampling less often,
+    # reduces particle depletion but this filter already has recovery_alpha
+    # injection for that, and the aisle is repetitive enough that delayed
+    # resampling lets wrong hypotheses persist.
+    resample_interval: 1
+
+    # Update only after real motion. 0.2 m / 0.2 rad. Updating on a stationary
+    # robot repeatedly resamples the same measurement and artificially collapses
+    # the particle cloud, producing a confident pose with no new evidence behind
+    # it.
+    update_min_d: 0.20
+    update_min_a: 0.20
+
+    # -----------------------------------------------------------------
+    # Recovery. Both non-zero, which enables random particle injection when the
+    # short-term average measurement likelihood falls below the long-term one.
+    #
+    # This is switched on because the failure it addresses is one this warehouse
+    # actively provokes: racking bays at a fixed 2.7 m pitch mean a filter that
+    # has locked onto the wrong bay sees perfectly good likelihood scores and
+    # will never recover on its own. The cost is that a genuine transient — a
+    # forklift briefly filling the scan — can trigger unnecessary injection, so
+    # alpha_fast is kept at the low end of the usual range.
+    # -----------------------------------------------------------------
+    recovery_alpha_slow: 0.001
+    recovery_alpha_fast: 0.10
+
+    # How far into the future the map -> odom transform is post-dated. Must
+    # exceed the interval between AMCL updates or consumers will intermittently
+    # find the transform expired. 1.0 s covers the worst case of a robot moving
+    # slowly enough that update_min_d takes a while to trigger.
+    transform_tolerance: 1.0
+
+    # Publish map -> odom continuously rather than only on update, so that TF
+    # consumers see a valid tree between AMCL updates.
+    tf_broadcast: true
+
+    # Seeded from the launch file to match the robot's spawn pose in Gazebo.
+    # Global localisation is exercised separately by the induced-failure runs in
+    # scripts/run_faults.sh, which call /reinitialize_global_localization.
+    set_initial_pose: true
+    always_reset_initial_pose: false
+    initial_pose:
+      x: -12.0
+      y: 0.0
+      z: 0.0
+      yaw: 0.0
+
+    # Beams within this angle of each other are considered redundant. Zero
+    # disables the check; the subsampling in max_beams already handles it.
+    do_beamskip: false
+    beam_skip_distance: 0.5
+    beam_skip_threshold: 0.3
+    beam_skip_error_threshold: 0.9
+
+    save_pose_rate: 0.5

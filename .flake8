@@ -1,0 +1,26 @@
+[flake8]
+# 120 rather than 79. Much of this codebase is parameter declarations carrying
+# a sentence of rationale, and hard-wrapping those makes them less readable, not
+# more. Config lives here rather than in CI flags so `make lint` and the CI job
+# cannot drift apart.
+max-line-length = 120
+
+# E203: disagrees with black on slice spacing.
+# W503: line break before binary operator, which is now the preferred style.
+extend-ignore = E203, W503
+
+exclude =
+    .git,
+    __pycache__,
+    build,
+    install,
+    log,
+    results,
+    .venv,
+    venv
+
+per-file-ignores =
+    # Analysis scripts and tests insert paths before importing, so their imports
+    # legitimately are not all at the top of the file.
+    analysis/*.py: E402
+    tests/*.py: E402

@@ -1,0 +1,41 @@
+# ROS 2 / colcon
+build/
+install/
+log/
+.colcon/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+.coverage
+htmlcov/
+
+# Generated run artefacts. Everything under results/ is reproducible from
+# `make eval`, so it is deliberately not tracked. Committed reference numbers
+# live in docs/ instead.
+results/
+*.bag
+*.db3
+*.mcap
+rosbag2_*/
+
+# Maps produced by `make map`. The reference map that the demo localises
+# against is tracked (simulation/maps/warehouse.*); scratch maps are not.
+maps_scratch/
+
+# Gazebo
+.gazebo/
+*.log
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

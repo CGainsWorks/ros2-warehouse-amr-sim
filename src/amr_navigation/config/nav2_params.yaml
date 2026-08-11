@@ -1,0 +1,574 @@
+# Nav2 configuration for the warehouse AMR.
+#
+# Every non-default value below has a reason attached. The full derivations,
+# including the ones that need a diagram, are in docs/parameter-rationale.md;
+# what is here is enough to know why a value is what it is before you change it.
+#
+# THE ROBOT AND THE SPACE, since almost every number descends from these:
+#
+#   footprint            0.70 x 0.50 m rectangle
+#   inscribed radius     0.25 m  (half-width)
+#   circumscribed radius 0.43 m  (sqrt(0.35^2 + 0.25^2))
+#   wheel separation     0.50 m, differential drive
+#   aisle clear width    2.80 m  (racking faces at y = +/-1.40)
+#   racking bay pitch    2.70 m, repeating for 30 m
+#   map resolution       0.05 m
+#
+# The two facts that drive the tuning are that the aisle is narrow relative to
+# the robot — 1.15 m of clearance either side — and that the racking repeats,
+# which is a localisation problem that shows up here as occasional pose jumps
+# the controller has to survive.
+
+# =============================================================================
+amcl:
+  # AMCL is configured in amr_localisation/config/amcl.yaml, not here, because
+  # it belongs with the EKF and the map it localises against rather than with
+  # the planner. The lifecycle manager below still manages it.
+  ros__parameters:
+    use_sim_time: true
+
+# =============================================================================
+bt_navigator:
+  ros__parameters:
+    use_sim_time: true
+    global_frame: map
+    robot_base_frame: base_link
+    odom_topic: /odometry/filtered
+
+    # 10 Hz. The BT only ticks conditions and forwards to servers; ticking it
+    # faster burns CPU without changing behaviour, and slower delays the
+    # transition into recovery after a failure.
+    bt_loop_duration: 100
+
+    # How long a server has to accept a goal before the BT gives up on it.
+    default_server_timeout: 20
+
+    # Custom tree with an explicit, ordered recovery sequence. See
+    # behavior_trees/navigate_w_recovery.xml.
+    default_nav_to_pose_bt_xml: >-
+      $(find-pkg-share amr_navigation)/behavior_trees/navigate_w_recovery.xml
+    default_nav_through_poses_bt_xml: >-
+      $(find-pkg-share amr_navigation)/behavior_trees/navigate_through_poses_w_recovery.xml
+
+    plugin_lib_names:
+      - nav2_compute_path_to_pose_action_bt_node
+      - nav2_compute_path_through_poses_action_bt_node
+      - nav2_follow_path_action_bt_node
+      - nav2_back_up_action_bt_node
+      - nav2_spin_action_bt_node
+      - nav2_wait_action_bt_node
+      - nav2_clear_costmap_service_bt_node
+      - nav2_is_stuck_condition_bt_node
+      - nav2_goal_reached_condition_bt_node
+      - nav2_goal_updated_condition_bt_node
+      - nav2_initial_pose_received_condition_bt_node
+      - nav2_reinitialize_global_localization_service_bt_node
+      - nav2_rate_controller_bt_node
+      - nav2_distance_controller_bt_node
+      - nav2_speed_controller_bt_node
+      - nav2_recovery_node_bt_node
+      - nav2_pipeline_sequence_bt_node
+      - nav2_round_robin_node_bt_node
+      - nav2_transform_available_condition_bt_node
+      - nav2_time_expired_condition_bt_node
+      - nav2_distance_traveled_condition_bt_node
+      - nav2_single_trigger_bt_node
+      - nav2_is_battery_low_condition_bt_node
+      - nav2_navigate_through_poses_action_bt_node
+      - nav2_navigate_to_pose_action_bt_node
+      - nav2_remove_passed_goals_action_bt_node
+      - nav2_planner_selector_bt_node
+      - nav2_controller_selector_bt_node
+      - nav2_goal_checker_selector_bt_node
+
+# =============================================================================
+controller_server:
+  ros__parameters:
+    use_sim_time: true
+
+    # 20 Hz. DWB rolls out ~800 trajectories per cycle here; at 20 Hz that is a
+    # comfortable load and gives the base a fresh command every 50 ms, which is
+    # well inside the 0.5 s it takes to stop from cruise at 1.0 m/s^2.
+    controller_frequency: 20.0
+
+    # Velocities below these count as stopped, for the purposes of the
+    # progress checker and the goal checker.
+    min_x_velocity_threshold: 0.001
+    min_y_velocity_threshold: 0.5
+    min_theta_velocity_threshold: 0.001
+
+    # If no valid trajectory is found for this long, fail the controller and let
+    # the BT run recovery. 3 s is roughly three replanning cycles: long enough
+    # that a person walking through the aisle clears on their own, short enough
+    # that a genuine blockage triggers recovery before the robot has sat there
+    # looking broken.
+    failure_tolerance: 3.0
+
+    progress_checker_plugin: progress_checker
+    goal_checker_plugins: [general_goal_checker]
+    controller_plugins: [FollowPath]
+
+    progress_checker:
+      plugin: nav2_controller::SimpleProgressChecker
+      # 0.5 m in 10 s. Deliberately loose. A tight progress check fires while
+      # the robot is legitimately creeping past a pallet in a narrow aisle, and
+      # a spurious recovery in that situation makes things worse, not better.
+      required_movement_radius: 0.5
+      movement_time_allowance: 10.0
+
+    general_goal_checker:
+      plugin: nav2_controller::SimpleGoalChecker
+      # 0.20 m and 0.15 rad. The pick positions this robot drives to have real
+      # tolerance; demanding centimetre accuracy from a differential base makes
+      # it hunt around the goal without improving anything downstream.
+      xy_goal_tolerance: 0.20
+      yaw_goal_tolerance: 0.15
+      # Require the robot to be stopped at the goal, not merely within
+      # tolerance while still moving.
+      stateful: true
+
+    # -------------------------------------------------------------------------
+    # DWB
+    # -------------------------------------------------------------------------
+    FollowPath:
+      plugin: dwb_core::DWBLocalPlanner
+      debug_trajectory_details: false
+
+      # --- Velocity and acceleration limits ---------------------------------
+      #
+      # These must match what the base can actually do. acc_lim_x of 1.0 m/s^2
+      # corresponds exactly to max_wheel_acceleration of 10 rad/s^2 at the
+      # 0.10 m wheel radius set in amr_description. A planner that assumes more
+      # deceleration than the base delivers overshoots every goal.
+      min_vel_x: 0.0
+      max_vel_x: 0.80
+      # Differential drive: no lateral motion is possible at all.
+      min_vel_y: 0.0
+      max_vel_y: 0.0
+      max_vel_theta: 1.20
+      min_speed_xy: 0.0
+      max_speed_xy: 0.80
+      # Below this the robot is considered to be doing an in-place rotation, and
+      # the rotation critics take over from the translation ones.
+      min_speed_theta: 0.0
+
+      acc_lim_x: 1.0
+      acc_lim_y: 0.0
+      acc_lim_theta: 2.0
+      decel_lim_x: -1.0
+      decel_lim_y: 0.0
+      decel_lim_theta: -2.0
+
+      # --- Trajectory generation --------------------------------------------
+      #
+      # 1.7 s at 0.8 m/s is a 1.36 m rollout. This is the single most consequential
+      # DWB parameter in a narrow aisle and it is a genuine trade:
+      #
+      #   Longer  (2.5 s, 2.0 m): the robot sees the far side of a gap and
+      #           commits earlier, but every trajectory that clips an obstacle
+      #           anywhere in 2 m is scored down, so it becomes reluctant to
+      #           enter a 1.2 m gap between a pallet and the racking at all.
+      #   Shorter (1.0 s, 0.8 m): squeezes through gaps happily, but does not
+      #           see far enough ahead to start decelerating for the aisle end,
+      #           so it arrives at the turn too fast and overshoots.
+      #
+      # 1.7 s is a little over the 1.36 m needed to stop from cruise plus the
+      # robot's own length, which is the shortest horizon that guarantees every
+      # simulated trajectory can be brought to a halt within itself.
+      sim_time: 1.7
+
+      # Rollout granularity: 0.05 m matches the costmap resolution, so no
+      # trajectory step can skip over a lethal cell.
+      linear_granularity: 0.05
+      angular_granularity: 0.025
+
+      # 20 x 40 = 800 trajectories per cycle. vy_samples is 1 rather than 0
+      # because the sampler requires at least one, and max_vel_y is zero so it
+      # only ever produces the single zero-lateral-velocity value.
+      vx_samples: 20
+      vy_samples: 1
+      vtheta_samples: 40
+
+      # Sample the velocity space rather than the acceleration space: with the
+      # limits above the reachable velocity window at 20 Hz is narrow, and
+      # sampling it directly gives better coverage of the useful range.
+      discretize_by_time: false
+
+      transform_tolerance: 0.2
+      # Trim the global path to this far ahead before scoring. Matching it to
+      # roughly the rollout distance stops the path critics being dominated by
+      # a segment of path the robot cannot reach this cycle.
+      prune_plan: true
+      prune_distance: 2.0
+
+      # Stop scoring a trajectory as soon as it is worse than the best so far.
+      # Pure speed; no behavioural effect.
+      short_circuit_trajectory_evaluation: true
+
+      # --- Critics ----------------------------------------------------------
+      #
+      # Scores are summed, so only the ratios matter. The tuning intent here is
+      # "follow the planned centreline closely, and treat obstacle proximity as
+      # a strong but not absolute preference".
+      critics:
+        - RotateToGoal
+        - Oscillation
+        - BaseObstacle
+        - GoalAlign
+        - PathAlign
+        - PathDist
+        - GoalDist
+
+      # Distance from the planned path. Raised from the Nav2 default of 32 to
+      # 44: in a 2.8 m aisle the global path down the centreline is very nearly
+      # the only safe route, and letting the controller wander off it to shave a
+      # corner puts the robot into the inflation band beside the racking.
+      PathDist.scale: 44.0
+      # Heading agreement with the path. Raised from 32 to 40 for the same
+      # reason; a differential base that drifts in heading in a corridor ends up
+      # crabbing towards a rack face.
+      PathAlign.scale: 40.0
+      # How far ahead of the robot the alignment is evaluated. 0.325 m is just
+      # under half the robot length, which keeps the alignment critic from
+      # reacting to path curvature the robot is already inside.
+      PathAlign.forward_point_distance: 0.325
+
+      # Progress towards the goal. Left at the defaults: raising these relative
+      # to the path critics makes the robot cut across the aisle towards the
+      # goal instead of following the corridor.
+      GoalDist.scale: 24.0
+      GoalAlign.scale: 24.0
+      GoalAlign.forward_point_distance: 0.325
+
+      # Obstacle proximity, scored from the local costmap under the footprint.
+      # 0.02 looks tiny next to the path critics and is not: BaseObstacle
+      # returns raw costmap cost, which runs to 253, while the path critics
+      # return distances in cells. At 0.02 an inflated cell near the inscribed
+      # radius contributes about 5 points, comparable to being one cell off the
+      # path — which is the intended balance.
+      BaseObstacle.scale: 0.02
+      # Score against the whole footprint rather than a single centre point.
+      # For a 0.70 x 0.50 m rectangle in a 2.8 m aisle the difference is the
+      # corners, and the corners are what actually hit the racking.
+      BaseObstacle.sum_scores: false
+
+      # Penalise reversing direction repeatedly. x_only_threshold is set below
+      # the minimum useful forward speed so that a genuine in-place rotation at
+      # the start of a manoeuvre is not mistaken for oscillation.
+      Oscillation.scale: 1.0
+      Oscillation.oscillation_reset_dist: 0.05
+      Oscillation.oscillation_reset_angle: 0.2
+      Oscillation.oscillation_reset_time: 1.0
+      Oscillation.x_only_threshold: 0.05
+
+      # Rotate in place to the goal heading once inside the xy tolerance.
+      # slowing_factor and lookahead are left at defaults; the trans_stopped
+      # velocity must agree with the goal checker's idea of stopped.
+      RotateToGoal.scale: 32.0
+      RotateToGoal.slowing_factor: 5.0
+      RotateToGoal.lookahead_time: -1.0
+      RotateToGoal.xy_goal_tolerance: 0.20
+      RotateToGoal.trans_stopped_velocity: 0.25
+
+# =============================================================================
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      use_sim_time: true
+      global_frame: odom
+      robot_base_frame: base_link
+
+      # 5 Hz. The controller runs at 20 Hz but the sensors update at 10 Hz, so
+      # updating the costmap faster than 10 Hz cannot produce new information.
+      # 5 Hz halves the cost again and is still four costmap updates inside the
+      # robot's stopping distance at cruise.
+      update_frequency: 5.0
+      publish_frequency: 2.0
+
+      rolling_window: true
+      # 6 x 6 m centred on the robot. Must exceed twice the DWB rollout distance
+      # (1.36 m) plus the inflation radius, or trajectories run off the edge of
+      # the costmap and are scored against unknown space. 6 m gives 3 m in every
+      # direction, comfortably more than needed, and spans the full 2.8 m aisle
+      # width plus both rack faces.
+      width: 6
+      height: 6
+      resolution: 0.05
+
+      # Matches the URDF. A rectangle rather than robot_radius: a 0.43 m
+      # circumscribed circle around a 0.70 x 0.50 m robot claims 0.18 m of
+      # clearance beside the robot that does not exist, and in a 2.8 m aisle
+      # that is the difference between a viable plan and none.
+      footprint: "[[0.35, 0.25], [0.35, -0.25], [-0.35, -0.25], [-0.35, 0.25]]"
+      footprint_padding: 0.02
+
+      plugins: [obstacle_layer, inflation_layer]
+
+      obstacle_layer:
+        plugin: nav2_costmap_2d::ObstacleLayer
+        enabled: true
+        # Two sources, because neither alone is sufficient:
+        #
+        #   scan          the 2D LiDAR at 0.35 m. Sees pallet feet, racking
+        #                 uprights and people. Blind to anything overhanging
+        #                 above or below that one plane — a shelf beam
+        #                 protruding into the aisle at 1.6 m, or a pallet lip at
+        #                 0.15 m under a rack.
+        #   segmentation  the non-ground returns from the 3D LiDAR, already
+        #                 ground-filtered by amr_perception. Covers the full
+        #                 column, which is what catches the overhangs.
+        #
+        # Feeding the raw 3D cloud instead of the segmented obstacles would put
+        # the floor into the costmap as a wall of lethal cells.
+        observation_sources: scan segmentation
+
+        scan:
+          topic: /scan
+          data_type: LaserScan
+          sensor_frame: lidar_2d_link
+          # 0.3 s. Two scan periods; beyond that an observation is stale enough
+          # that acting on it is worse than dropping it.
+          observation_persistence: 0.0
+          expected_update_rate: 0.3
+          marking: true
+          clearing: true
+          min_obstacle_height: 0.0
+          max_obstacle_height: 2.0
+          # Mark at 12 m, clear out to 15 m. Clearing range must exceed marking
+          # range: if they are equal, a cell marked at the limit can never be
+          # cleared and the costmap accumulates permanent phantom obstacles at
+          # the edge of sensor range.
+          obstacle_max_range: 12.0
+          obstacle_min_range: 0.0
+          raytrace_max_range: 15.0
+          raytrace_min_range: 0.0
+          inf_is_valid: true
+
+        segmentation:
+          topic: /segmentation_node/obstacles
+          data_type: PointCloud2
+          sensor_frame: base_footprint
+          observation_persistence: 0.0
+          expected_update_rate: 0.3
+          marking: true
+          # Not used for clearing. This cloud has already had the ground removed,
+          # so it contains no free-space evidence — ray-tracing through it would
+          # clear cells the sensor never actually saw as empty.
+          clearing: false
+          # 0.10 m floor: below this is floor tape and cable covers, which the
+          # ground-plane fit does not always catch on a slightly uneven floor.
+          # 2.00 m ceiling: the robot with its mast is 0.90 m tall, and a shelf
+          # beam at 1.60 m is the highest thing that can foul it.
+          min_obstacle_height: 0.10
+          max_obstacle_height: 2.00
+          obstacle_max_range: 15.0
+          obstacle_min_range: 0.0
+          raytrace_max_range: 15.0
+          raytrace_min_range: 0.0
+
+      inflation_layer:
+        plugin: nav2_costmap_2d::InflationLayer
+        enabled: true
+        # 0.65 m = circumscribed radius (0.43) + 0.22 m margin.
+        #
+        # Worked through for this aisle: racking faces sit at |y| = 1.40, so the
+        # inflated bands reach |y| = 0.75 and leave a 1.50 m zero-cost corridor
+        # down the middle. The robot is 0.50 m wide, so it has 0.50 m of clear
+        # space either side while sitting entirely in zero-cost cells. Pushing
+        # the radius to 0.9 m would close that corridor entirely and force every
+        # plan through non-zero cost, at which point the cost gradient stops
+        # meaning "avoid this" and starts meaning nothing at all.
+        inflation_radius: 0.65
+        # Decay rate. At the inflation radius the residual cost is
+        # 253 * exp(-3.0 * (0.65 - 0.25)) = 76, so there is a step from 76 to 0
+        # at the boundary. That discontinuity is a known property of Nav2's
+        # inflation and is accepted here: it falls in free space 0.75 m from the
+        # racking, where PathDist and GoalDist dominate the DWB score anyway,
+        # and removing it by raising the factor to ~8 would compress the entire
+        # useful gradient into the first 10 cm beyond the robot's own edge.
+        cost_scaling_factor: 3.0
+        inflate_unknown: false
+
+      always_send_full_costmap: true
+
+# =============================================================================
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      use_sim_time: true
+      global_frame: map
+      robot_base_frame: base_link
+
+      # 1 Hz. The static map does not change, and the obstacle layer here exists
+      # only so the global planner routes around a pallet left in the aisle
+      # rather than repeatedly planning through it. Sub-second reaction is the
+      # local costmap's job.
+      update_frequency: 1.0
+      publish_frequency: 1.0
+
+      # Full 30 x 12 m warehouse plus wall thickness.
+      rolling_window: false
+      width: 32
+      height: 14
+      origin_x: -16.0
+      origin_y: -7.0
+      resolution: 0.05
+
+      footprint: "[[0.35, 0.25], [0.35, -0.25], [-0.35, -0.25], [-0.35, 0.25]]"
+      footprint_padding: 0.02
+
+      # False. The warehouse is fully mapped, so unknown space in the global
+      # costmap means a mapping gap or a localisation failure, and planning
+      # confidently through either is exactly wrong.
+      track_unknown_space: false
+
+      plugins: [static_layer, obstacle_layer, inflation_layer]
+
+      static_layer:
+        plugin: nav2_costmap_2d::StaticLayer
+        enabled: true
+        map_subscribe_transient_local: true
+
+      obstacle_layer:
+        plugin: nav2_costmap_2d::ObstacleLayer
+        enabled: true
+        observation_sources: scan
+        scan:
+          topic: /scan
+          data_type: LaserScan
+          sensor_frame: lidar_2d_link
+          expected_update_rate: 0.3
+          marking: true
+          clearing: true
+          min_obstacle_height: 0.0
+          max_obstacle_height: 2.0
+          obstacle_max_range: 12.0
+          raytrace_max_range: 15.0
+          inf_is_valid: true
+
+      inflation_layer:
+        plugin: nav2_costmap_2d::InflationLayer
+        enabled: true
+        # Identical to the local costmap, deliberately. Different inflation
+        # between the two is a common and miserable failure: the global planner
+        # produces a path through a gap the local costmap considers costly, the
+        # controller refuses to follow it, and the robot oscillates between
+        # replanning and recovery with nothing obviously wrong in either log.
+        inflation_radius: 0.65
+        cost_scaling_factor: 3.0
+        inflate_unknown: false
+
+      always_send_full_costmap: true
+
+# =============================================================================
+planner_server:
+  ros__parameters:
+    use_sim_time: true
+    # 1 Hz replanning. The BT's RateController drives this; the value here is
+    # the server's own expected frequency for its watchdog.
+    expected_planner_frequency: 1.0
+    planner_plugins: [GridBased]
+
+    GridBased:
+      # NavFn rather than Smac. The warehouse is topologically a corridor: there
+      # is essentially one route between any two points, so the sophistication
+      # Smac buys — cost-aware path smoothing across open floor, kinematically
+      # feasible curves for an Ackermann base — has nothing to work with here,
+      # and NavFn plans the full 30 m in single-digit milliseconds. Smac 2D
+      # would be the right choice if the warehouse had open cross-dock areas
+      # where several routes compete.
+      plugin: nav2_navfn_planner/NavfnPlanner
+      # A* rather than Dijkstra. Over a 30 m aisle the heuristic prunes most of
+      # the search, and the resulting path is indistinguishable.
+      use_astar: true
+      # 0.5 m. If the exact goal cell is in an inflated or occupied region —
+      # which happens when a goal is specified at a pick face — plan to the
+      # nearest reachable cell within this radius instead of failing outright.
+      tolerance: 0.5
+      # Matches track_unknown_space above.
+      allow_unknown: false
+
+# =============================================================================
+smoother_server:
+  ros__parameters:
+    use_sim_time: true
+    smoother_plugins: [simple_smoother]
+    simple_smoother:
+      plugin: nav2_smoother::SimpleSmoother
+      tolerance: 1.0e-10
+      max_its: 1000
+      # False: do not smooth across cost boundaries. NavFn output in a narrow
+      # aisle already runs close to the inflation band, and a smoother allowed
+      # to cut corners across cost gradients will shave exactly the corners that
+      # have racking on the inside of them.
+      do_refinement: false
+
+# =============================================================================
+behavior_server:
+  ros__parameters:
+    use_sim_time: true
+    local_costmap_topic: local_costmap/costmap_raw
+    local_footprint_topic: local_costmap/published_footprint
+    global_costmap_topic: global_costmap/costmap_raw
+    global_footprint_topic: global_costmap/published_footprint
+    cycle_frequency: 10.0
+
+    behavior_plugins: [spin, backup, drive_on_heading, wait, assisted_teleop]
+    spin:
+      plugin: nav2_behaviors/Spin
+    backup:
+      plugin: nav2_behaviors/BackUp
+    drive_on_heading:
+      plugin: nav2_behaviors/DriveOnHeading
+    wait:
+      plugin: nav2_behaviors/Wait
+    assisted_teleop:
+      plugin: nav2_behaviors/AssistedTeleop
+
+    global_frame: odom
+    robot_base_frame: base_link
+    transform_tolerance: 0.1
+
+    # Recovery motions are deliberately slower than navigation. A recovery runs
+    # when the robot's model of its surroundings is already known to be wrong,
+    # which is the worst possible moment to be moving quickly.
+    simulate_ahead_time: 2.0
+    max_rotational_vel: 0.60
+    min_rotational_vel: 0.20
+    rotational_acc_lim: 2.0
+
+# =============================================================================
+velocity_smoother:
+  ros__parameters:
+    use_sim_time: true
+    smoothing_frequency: 20.0
+    scale_velocities: false
+    feedback: OPEN_LOOP
+    max_velocity: [0.80, 0.0, 1.20]
+    min_velocity: [-0.30, 0.0, -1.20]
+    # Matches acc_lim_x / acc_lim_theta above and, through them, the base's
+    # actual wheel acceleration limit.
+    max_accel: [1.0, 0.0, 2.0]
+    max_decel: [-1.0, 0.0, -2.0]
+    odom_topic: /odometry/filtered
+    odom_duration: 0.1
+    deadband_velocity: [0.0, 0.0, 0.0]
+    velocity_timeout: 1.0
+
+# =============================================================================
+waypoint_follower:
+  ros__parameters:
+    use_sim_time: true
+    loop_rate: 20
+    # False. If one pick position in a mission is unreachable, the remaining
+    # ones usually still are, and a mission that aborts entirely because of one
+    # blocked face is less useful than one that reports the failure and
+    # continues. The mission runner records which waypoints failed.
+    stop_on_failure: false
+    waypoint_task_executor_plugin: wait_at_waypoint
+    wait_at_waypoint:
+      plugin: nav2_waypoint_follower::WaitAtWaypoint
+      enabled: true
+      # 2 s dwell, representing a pick. Also gives the zone publisher several
+      # scans at a standstill, which is when its readings are cleanest.
+      waypoint_pause_duration: 2000

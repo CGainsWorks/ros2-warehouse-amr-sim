@@ -1,0 +1,228 @@
+<?xml version="1.0"?>
+<!--
+  Gazebo plugins: differential drive, 2D LiDAR, 3D LiDAR, IMU, and a ground
+  truth pose publisher.
+
+  Sensor noise is set deliberately, not left at zero. A noiseless simulation
+  produces localisation numbers that cannot be reproduced on hardware and that
+  make the whole evaluation misleading. The values here are representative of
+  the class of hardware this stack targets and are the same values the synthetic
+  point-cloud generator in amr_perception uses, so metrics measured offline
+  describe the same problem as the simulated run.
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <gazebo reference="base_link">
+    <material>Gazebo/Grey</material>
+  </gazebo>
+
+  <!-- ==================================================================== -->
+  <!-- Differential drive                                                    -->
+  <!-- ==================================================================== -->
+  <gazebo>
+    <plugin name="diff_drive" filename="libgazebo_ros_diff_drive.so">
+      <ros>
+        <namespace>/</namespace>
+        <remapping>cmd_vel:=cmd_vel</remapping>
+        <remapping>odom:=odom</remapping>
+      </ros>
+
+      <update_rate>50</update_rate>
+      <left_joint>left_wheel_joint</left_joint>
+      <right_joint>right_wheel_joint</right_joint>
+      <wheel_separation>0.50</wheel_separation>
+      <wheel_diameter>0.20</wheel_diameter>
+
+      <!-- Torque to accelerate 65 kg at 1.0 m/s^2 is 32.5 N per wheel, or
+           3.25 Nm at a 0.10 m radius. 25 Nm leaves ample margin for the ramp
+           onto a dock and for pushing through a floor seam. -->
+      <max_wheel_torque>25.0</max_wheel_torque>
+      <!-- rad/s^2, NOT m/s^2. At a 0.10 m wheel radius this is 1.0 m/s^2 at the
+           contact patch, which is what acc_lim_x in nav2_params.yaml is set to.
+           These two numbers must agree: a DWB that plans deceleration the base
+           cannot deliver will overshoot every goal and clip every corner. -->
+      <max_wheel_acceleration>10.0</max_wheel_acceleration>
+
+      <odometry_frame>odom</odometry_frame>
+      <robot_base_frame>base_footprint</robot_base_frame>
+
+      <!-- ENCODER, not WORLD. WORLD makes the plugin publish Gazebo's exact
+           pose as odometry, which removes every source of drift and turns the
+           localisation evaluation into a measurement of nothing. ENCODER
+           integrates the wheel joints, so the odometry accumulates error the
+           way real encoders do. -->
+      <odometry_source>1</odometry_source>
+
+      <publish_odom>true</publish_odom>
+      <!-- The EKF owns odom -> base_link. If the plugin also published it there
+           would be two publishers on one transform and the tree would flip
+           between them. -->
+      <publish_odom_tf>false</publish_odom_tf>
+      <publish_wheel_tf>true</publish_wheel_tf>
+
+      <!-- Covariance the plugin advertises on /odom. The EKF reads these, so
+           they have to be honest rather than optimistic. -->
+      <covariance_x>0.001</covariance_x>
+      <covariance_y>0.001</covariance_y>
+      <covariance_yaw>0.01</covariance_yaw>
+    </plugin>
+  </gazebo>
+
+  <!-- ==================================================================== -->
+  <!-- 2D LiDAR: AMCL, Cartographer, scan odometry, Nav2 obstacle layer      -->
+  <!-- ==================================================================== -->
+  <gazebo reference="lidar_2d_link">
+    <material>Gazebo/Blue</material>
+    <sensor name="lidar_2d" type="ray">
+      <pose>0 0 0 0 0 0</pose>
+      <visualize>false</visualize>
+      <update_rate>10.0</update_rate>
+      <ray>
+        <scan>
+          <horizontal>
+            <!-- 720 samples over the full circle: 0.5 degree resolution, which
+                 resolves a 0.10 m racking upright out to about 11 m. -->
+            <samples>720</samples>
+            <resolution>1</resolution>
+            <min_angle>-3.14159</min_angle>
+            <max_angle>3.14159</max_angle>
+          </horizontal>
+        </scan>
+        <range>
+          <min>0.12</min>
+          <max>25.0</max>
+          <resolution>0.01</resolution>
+        </range>
+        <noise>
+          <type>gaussian</type>
+          <mean>0.0</mean>
+          <stddev>0.01</stddev>
+        </noise>
+      </ray>
+      <plugin name="lidar_2d_controller" filename="libgazebo_ros_ray_sensor.so">
+        <ros>
+          <namespace>/</namespace>
+          <remapping>~/out:=scan</remapping>
+        </ros>
+        <output_type>sensor_msgs/LaserScan</output_type>
+        <frame_name>lidar_2d_link</frame_name>
+      </plugin>
+    </sensor>
+  </gazebo>
+
+  <!-- ==================================================================== -->
+  <!-- 3D LiDAR: segmentation and zone occupancy                             -->
+  <!-- ==================================================================== -->
+  <gazebo reference="lidar_3d_link">
+    <material>Gazebo/Blue</material>
+    <sensor name="lidar_3d" type="ray">
+      <pose>0 0 0 0 0 0</pose>
+      <visualize>false</visualize>
+      <update_rate>10.0</update_rate>
+      <ray>
+        <scan>
+          <horizontal>
+            <!-- 1800 x 0.2 degrees, the standard 10 Hz configuration for a
+                 16-ring spinning unit. -->
+            <samples>1800</samples>
+            <resolution>1</resolution>
+            <min_angle>-3.14159</min_angle>
+            <max_angle>3.14159</max_angle>
+          </horizontal>
+          <vertical>
+            <!-- 16 rings over +-15 degrees. At 12 m the ring spacing on a
+                 vertical surface is about 0.30 m, which is what sets the
+                 clustering tolerance: below roughly 0.32 m a person at the far
+                 end of the aisle fragments into one cluster per ring. -->
+            <samples>16</samples>
+            <resolution>1</resolution>
+            <min_angle>-0.261799</min_angle>
+            <max_angle>0.261799</max_angle>
+          </vertical>
+        </scan>
+        <range>
+          <min>0.60</min>
+          <max>40.0</max>
+          <resolution>0.01</resolution>
+        </range>
+        <noise>
+          <type>gaussian</type>
+          <mean>0.0</mean>
+          <stddev>0.01</stddev>
+        </noise>
+      </ray>
+      <plugin name="lidar_3d_controller" filename="libgazebo_ros_ray_sensor.so">
+        <ros>
+          <namespace>/</namespace>
+          <remapping>~/out:=lidar_3d/points</remapping>
+        </ros>
+        <output_type>sensor_msgs/PointCloud2</output_type>
+        <frame_name>lidar_3d_link</frame_name>
+      </plugin>
+    </sensor>
+  </gazebo>
+
+  <!-- ==================================================================== -->
+  <!-- IMU                                                                   -->
+  <!-- ==================================================================== -->
+  <gazebo reference="imu_link">
+    <sensor name="imu" type="imu">
+      <always_on>true</always_on>
+      <update_rate>100</update_rate>
+      <imu>
+        <angular_velocity>
+          <!-- 2e-4 rad/s noise with a 1e-5 rad/s bias random walk: the region a
+               mid-range MEMS gyro occupies. Zero noise here would let the EKF
+               integrate a perfect yaw rate and make the whole scan-matcher
+               contribution look pointless. -->
+          <x><noise type="gaussian"><mean>0.0</mean><stddev>2e-4</stddev>
+             <bias_mean>0.0000075</bias_mean><bias_stddev>0.0000008</bias_stddev></noise></x>
+          <y><noise type="gaussian"><mean>0.0</mean><stddev>2e-4</stddev>
+             <bias_mean>0.0000075</bias_mean><bias_stddev>0.0000008</bias_stddev></noise></y>
+          <z><noise type="gaussian"><mean>0.0</mean><stddev>2e-4</stddev>
+             <bias_mean>0.0000075</bias_mean><bias_stddev>0.0000008</bias_stddev></noise></z>
+        </angular_velocity>
+        <linear_acceleration>
+          <x><noise type="gaussian"><mean>0.0</mean><stddev>1.7e-2</stddev>
+             <bias_mean>0.1</bias_mean><bias_stddev>0.001</bias_stddev></noise></x>
+          <y><noise type="gaussian"><mean>0.0</mean><stddev>1.7e-2</stddev>
+             <bias_mean>0.1</bias_mean><bias_stddev>0.001</bias_stddev></noise></y>
+          <z><noise type="gaussian"><mean>0.0</mean><stddev>1.7e-2</stddev>
+             <bias_mean>0.1</bias_mean><bias_stddev>0.001</bias_stddev></noise></z>
+        </linear_acceleration>
+      </imu>
+      <plugin name="imu_controller" filename="libgazebo_ros_imu_sensor.so">
+        <ros>
+          <namespace>/</namespace>
+          <remapping>~/out:=imu/data</remapping>
+        </ros>
+        <frame_name>imu_link</frame_name>
+        <initial_orientation_as_reference>false</initial_orientation_as_reference>
+      </plugin>
+    </sensor>
+  </gazebo>
+
+  <!-- ==================================================================== -->
+  <!-- Ground truth                                                          -->
+  <!--                                                                       -->
+  <!-- Publishes the simulator's exact pose on /ground_truth/pose. This is the -->
+  <!-- reference the localisation evaluation measures against, and it is the   -->
+  <!-- ONLY consumer of it. Nothing in the navigation or localisation stack    -->
+  <!-- subscribes to this topic; if anything did, the evaluation would be      -->
+  <!-- measuring the simulator against itself. analysis/localisation_error.py  -->
+  <!-- asserts that the recorded run contains no such subscriber.              -->
+  <!-- ==================================================================== -->
+  <gazebo>
+    <plugin name="ground_truth" filename="libgazebo_ros_p3d.so">
+      <ros>
+        <namespace>/</namespace>
+        <remapping>odom:=ground_truth/pose</remapping>
+      </ros>
+      <frame_name>world</frame_name>
+      <body_name>base_footprint</body_name>
+      <update_rate>50.0</update_rate>
+      <gaussian_noise>0.0</gaussian_noise>
+    </plugin>
+  </gazebo>
+
+</robot>

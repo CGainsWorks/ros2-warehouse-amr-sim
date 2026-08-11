@@ -1,0 +1,59 @@
+<!--
+  NavigateThroughPoses with the same recovery ladder as navigate_w_recovery.xml.
+
+  This is the tree the mission runner uses, because a warehouse mission is a
+  sequence of pick faces rather than a single goal. The only structural
+  differences from the single-goal tree are:
+
+  * ComputePathThroughPoses plans one continuous path through all remaining
+    goals, so the robot does not decelerate to a stop at every intermediate
+    pose.
+  * RemovePassedGoals drops goals the robot has already reached from the list
+    before each replan. Without it, a replan mid-mission re-plans back to the
+    first pick face, which manifests as the robot inexplicably reversing down
+    the aisle after the first stop.
+
+  The recovery ladder is identical and for identical reasons; see the comment
+  block in navigate_w_recovery.xml.
+-->
+<root main_tree_to_execute="MainTree">
+  <BehaviorTree ID="MainTree">
+    <RecoveryNode number_of_retries="6" name="NavigateRecovery">
+
+      <PipelineSequence name="NavigateWithReplanning">
+        <RateController hz="1.0">
+          <RecoveryNode number_of_retries="1" name="ComputePathThroughPoses">
+            <ReactiveSequence name="ComputePathThroughPosesSequence">
+              <!-- 0.5 m radius: a goal is considered passed once the robot is
+                   within the same tolerance the goal checker uses. -->
+              <RemovePassedGoals input_goals="{goals}" output_goals="{goals}" radius="0.5"/>
+              <ComputePathThroughPoses goals="{goals}" path="{path}" planner_id="GridBased"/>
+            </ReactiveSequence>
+            <ClearEntireCostmap name="ClearGlobalCostmap-Context"
+                                service_name="global_costmap/clear_entirely_global_costmap"/>
+          </RecoveryNode>
+        </RateController>
+
+        <RecoveryNode number_of_retries="1" name="FollowPath">
+          <FollowPath path="{path}" controller_id="FollowPath"/>
+          <ClearEntireCostmap name="ClearLocalCostmap-Context"
+                              service_name="local_costmap/clear_entirely_local_costmap"/>
+        </RecoveryNode>
+      </PipelineSequence>
+
+      <ReactiveFallback name="RecoveryFallback">
+        <GoalUpdated/>
+        <RoundRobin name="RecoveryActions">
+          <ClearEntireCostmap name="ClearLocalCostmap-Recovery"
+                              service_name="local_costmap/clear_entirely_local_costmap"/>
+          <ClearEntireCostmap name="ClearGlobalCostmap-Recovery"
+                              service_name="global_costmap/clear_entirely_global_costmap"/>
+          <Spin spin_dist="1.57"/>
+          <BackUp backup_dist="0.30" backup_speed="0.05"/>
+          <Wait wait_duration="5"/>
+        </RoundRobin>
+      </ReactiveFallback>
+
+    </RecoveryNode>
+  </BehaviorTree>
+</root>

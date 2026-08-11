@@ -1,0 +1,182 @@
+# robot_localization EKF: wheel odometry + IMU + LiDAR scan odometry.
+#
+# This filter owns the odom -> base_link transform. AMCL owns map -> odom. That
+# split is REP-105 and it is not negotiable: the EKF gives a locally smooth,
+# continuously differentiable pose that the controller can differentiate without
+# seeing jumps, and AMCL corrects the accumulated drift discretely. A setup that
+# lets AMCL publish odom -> base_link directly makes DWB's velocity estimates
+# jump every time the particle filter resamples.
+#
+# WHY THREE SOURCES
+#
+# Each one fails in a way the other two do not:
+#
+#   wheel odometry   excellent short-term velocity, but reports motion that did
+#                    not happen during a slip. Warehouse floors have wet patches
+#                    and the drive wheels are the first thing to lose grip.
+#   IMU              immune to slip, good at fast rotation, but its yaw rate
+#                    integrates into unbounded yaw drift, and there is no usable
+#                    magnetic heading reference inside a steel-racked building.
+#   scan odometry    immune to slip and drift-free over a keyframe, but fails on
+#                    featureless stretches and when a forklift fills the view.
+#
+# Fusing all three means a single-source failure degrades the estimate rather
+# than corrupting it. The scan matcher additionally refuses to publish when its
+# fitness is poor, so the EKF sees silence rather than a confident wrong answer.
+
+ekf_filter_node:
+  ros__parameters:
+    # 30 Hz. Above the 20 Hz controller rate so the controller always has a
+    # fresh state, below the point where the filter is predicting far more often
+    # than any sensor updates it.
+    frequency: 30.0
+
+    # Three scan periods at 10 Hz. A source quiet for longer than this is
+    # treated as absent and the filter predicts through the gap rather than
+    # waiting.
+    sensor_timeout: 0.3
+
+    # The warehouse floor is flat and the robot is a differential drive. This
+    # fixes z, roll and pitch at zero and removes six states that are
+    # unobservable here and would otherwise absorb noise.
+    two_d_mode: true
+
+    transform_time_offset: 0.0
+    transform_timeout: 0.0
+    print_diagnostics: true
+    debug: false
+
+    publish_tf: true
+    publish_acceleration: false
+
+    map_frame: map
+    odom_frame: odom
+    base_link_frame: base_link
+    # Continuous, drift-prone, jump-free. See the note at the top.
+    world_frame: odom
+
+    # ---------------------------------------------------------------------
+    # odom0: wheel encoders, from the Gazebo differential drive plugin.
+    #
+    # Velocities only (vx, vyaw), never absolute pose. Fusing wheel x/y/yaw
+    # would feed the filter an estimate that has already integrated all of its
+    # own past error, which double-counts and makes the covariance optimistic.
+    # ---------------------------------------------------------------------
+    odom0: /odom
+    #             x      y      z
+    #             roll   pitch  yaw
+    #             vx     vy     vz
+    #             vroll  vpitch vyaw
+    #             ax     ay     az
+    odom0_config: [false, false, false,
+                   false, false, false,
+                   true,  false, false,
+                   false, false, true,
+                   false, false, false]
+    odom0_queue_size: 10
+    odom0_differential: false
+    odom0_relative: false
+    odom0_nodelay: true
+
+    # ---------------------------------------------------------------------
+    # imu0: MEMS IMU.
+    #
+    # Yaw RATE and forward acceleration only. Absolute yaw is deliberately not
+    # fused, for two reasons. A gyro without a heading reference has no absolute
+    # yaw to give — what it reports is its own integrated estimate, which is
+    # already what the filter is computing. And the obvious reference, a
+    # magnetometer, is useless in a building framed in steel with variable-speed
+    # drives in every truck.
+    #
+    # Gazebo's IMU plugin will happily publish a near-perfect absolute
+    # orientation derived from simulator ground truth. Fusing it would make the
+    # localisation numbers in docs/localisation-accuracy.md far better than
+    # anything achievable on hardware, which would make them worthless.
+    # ---------------------------------------------------------------------
+    imu0: /imu/data
+    imu0_config: [false, false, false,
+                  false, false, false,
+                  false, false, false,
+                  false, false, true,
+                  true,  false, false]
+    imu0_queue_size: 10
+    imu0_differential: false
+    imu0_relative: false
+    imu0_nodelay: true
+    # The Gazebo IMU is already expressed in the sensor frame with gravity
+    # removed; there is no bias to subtract.
+    imu0_remove_gravitational_acceleration: true
+
+    # ---------------------------------------------------------------------
+    # odom1: LiDAR scan odometry, from amr_localisation/scan_odometry_node.
+    #
+    # Differential mode: the filter takes successive pose differences and fuses
+    # them as a velocity. That is the correct treatment for a dead-reckoned
+    # source whose absolute value drifts but whose increments are good. Fusing
+    # its absolute pose non-differentially would put a second, competing
+    # absolute position estimate into a filter that already has AMCL for that
+    # job, and the two would fight.
+    # ---------------------------------------------------------------------
+    odom1: /scan_odometry_node/scan_odom
+    odom1_config: [true,  true,  false,
+                   false, false, true,
+                   false, false, false,
+                   false, false, false,
+                   false, false, false]
+    odom1_queue_size: 5
+    odom1_differential: true
+    odom1_relative: false
+    odom1_nodelay: true
+
+    # ---------------------------------------------------------------------
+    # Process noise. Diagonal of the 15x15; the off-diagonals are left at zero
+    # because there is no principled way to set 105 cross-terms by hand and a
+    # wrong one is worse than none.
+    #
+    # Values are chosen relative to each other rather than absolutely. The x/y
+    # and yaw terms are the ones that matter: too small and the filter ignores
+    # its measurements and coasts on prediction through a genuine slip; too
+    # large and it tracks every sensor wobble. These sit roughly an order of
+    # magnitude below the measurement noise the sources report, which makes the
+    # filter mildly prediction-trusting between updates — the right bias for a
+    # 30 Hz filter reading 10 Hz sensors.
+    #
+    # The z/roll/pitch entries are unused under two_d_mode but must be present
+    # and non-zero, or the matrix is singular.
+    # ---------------------------------------------------------------------
+    process_noise_covariance: [
+      0.010, 0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
+      0.0,   0.010, 0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
+      0.0,   0.0,   0.060, 0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
+      0.0,   0.0,   0.0,   0.030, 0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
+      0.0,   0.0,   0.0,   0.0,   0.030, 0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
+      0.0,   0.0,   0.0,   0.0,   0.0,   0.015, 0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
+      0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.020, 0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
+      0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.020, 0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
+      0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.040, 0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
+      0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.010, 0.0,   0.0,   0.0,   0.0,   0.0,
+      0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.010, 0.0,   0.0,   0.0,   0.0,
+      0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.020, 0.0,   0.0,   0.0,
+      0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.010, 0.0,   0.0,
+      0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.010, 0.0,
+      0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.015]
+
+    # Initial state covariance. The robot starts at a known dock, so position
+    # and yaw start tight (1e-9); velocities start loose because they are
+    # genuinely unknown until the first measurement arrives.
+    initial_estimate_covariance: [
+      1e-9, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+      0.0,  1e-9, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+      0.0,  0.0,  1e-9, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+      0.0,  0.0,  0.0,  1e-9, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+      0.0,  0.0,  0.0,  0.0,  1e-9, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  1e-9, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1.0,  0.0,  0.0,  0.0,  0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1.0,  0.0,  0.0,  0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1.0,  0.0,  0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1.0,  0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1.0]

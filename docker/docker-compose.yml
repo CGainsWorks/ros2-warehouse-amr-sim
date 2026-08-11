@@ -1,0 +1,68 @@
+# One-command entry points.
+#
+#   docker compose -f docker/docker-compose.yml run --rm check   # offline metrics
+#   docker compose -f docker/docker-compose.yml up demo          # headless sim
+#   docker compose -f docker/docker-compose.yml up gui           # with Gazebo + RViz
+#
+# `check` is the one to reach for first: it needs no display, no GPU and no
+# Gazebo, and it reproduces every segmentation and scan-matching number in the
+# README in a few seconds.
+
+x-common: &common
+  build:
+    context: ..
+    dockerfile: docker/Dockerfile
+  image: ros2-warehouse-amr-sim:latest
+  # Fast DDS over loopback in a container needs a large shared-memory segment;
+  # the default 64 MB causes intermittent discovery failures between the dozen
+  # or so nodes this stack runs.
+  shm_size: "2gb"
+  environment:
+    - ROS_DOMAIN_ID=42
+    # Containers on one host must not discover each other's nodes.
+    - ROS_LOCALHOST_ONLY=1
+  volumes:
+    - ../results:/ws/results
+
+services:
+  # Offline metrics. No simulator, no display.
+  check:
+    <<: *common
+    command: ["make", "check", "RESULTS=/ws/results"]
+
+  # Headless simulation with the full stack.
+  demo:
+    <<: *common
+    command:
+      ["ros2", "launch", "amr_bringup", "simulation.launch.py", "headless:=true"]
+
+  # Simulation with the Gazebo GUI and RViz. Needs an X server on the host;
+  # on Linux, `xhost +local:docker` first.
+  gui:
+    <<: *common
+    environment:
+      - ROS_DOMAIN_ID=42
+      - ROS_LOCALHOST_ONLY=1
+      - DISPLAY=${DISPLAY:-:0}
+      - QT_X11_NO_MITSHM=1
+    volumes:
+      - ../results:/ws/results
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    command:
+      ["ros2", "launch", "amr_bringup", "simulation.launch.py",
+       "headless:=false", "use_rviz:=true"]
+
+  # Mapping run. Writes the map into the mounted results directory.
+  map:
+    <<: *common
+    command: ["./scripts/run_mapping.sh", "/ws/results"]
+
+  # Full evaluation: mission, pose logging, then the accuracy report.
+  eval:
+    <<: *common
+    command: ["./scripts/run_evaluation.sh", "/ws/results"]
+
+  # Evaluation with induced failures, producing the recovery matrix.
+  faults:
+    <<: *common
+    command: ["./scripts/run_faults.sh", "/ws/results"]

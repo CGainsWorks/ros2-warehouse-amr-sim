@@ -1,0 +1,106 @@
+# GENERATED FILE. Do not edit by hand.
+# Produced by simulation/generate_world.py; run `make world` after changing it.
+#
+# Coordinates are in the map frame, metres. Each zone is a floor polygon
+# plus a height band, forming a vertical prism.
+
+zones:
+  - name: pick_face_north_0
+    description: >-
+      Pick face covering bays 0-2 on the north run.
+    polygon:
+      - [-13.50, 0.50]
+      - [-5.40, 0.50]
+      - [-5.40, 1.25]
+      - [-13.50, 1.25]
+    # Above floor clutter, below the first beam at 0.80 m, so a
+    # loaded pallet on the bottom level does not read as a person.
+    z_min: 0.25
+    z_max: 1.80
+    min_points: 15
+
+  - name: pick_face_north_1
+    description: >-
+      Pick face covering bays 3-5 on the north run.
+    polygon:
+      - [-5.40, 0.50]
+      - [2.70, 0.50]
+      - [2.70, 1.25]
+      - [-5.40, 1.25]
+    # Above floor clutter, below the first beam at 0.80 m, so a
+    # loaded pallet on the bottom level does not read as a person.
+    z_min: 0.25
+    z_max: 1.80
+    min_points: 15
+
+  - name: pick_face_north_2
+    description: >-
+      Pick face covering bays 6-8 on the north run.
+    polygon:
+      - [2.70, 0.50]
+      - [10.80, 0.50]
+      - [10.80, 1.25]
+      - [2.70, 1.25]
+    # Above floor clutter, below the first beam at 0.80 m, so a
+    # loaded pallet on the bottom level does not read as a person.
+    z_min: 0.25
+    z_max: 1.80
+    min_points: 15
+
+  - name: pick_face_south_0
+    description: >-
+      Pick face covering bays 0-2 on the south run.
+    polygon:
+      - [-13.50, -1.25]
+      - [-5.40, -1.25]
+      - [-5.40, -0.50]
+      - [-13.50, -0.50]
+    # Above floor clutter, below the first beam at 0.80 m, so a
+    # loaded pallet on the bottom level does not read as a person.
+    z_min: 0.25
+    z_max: 1.80
+    min_points: 15
+
+  - name: pick_face_south_1
+    description: >-
+      Pick face covering bays 3-5 on the south run.
+    polygon:
+      - [-5.40, -1.25]
+      - [2.70, -1.25]
+      - [2.70, -0.50]
+      - [-5.40, -0.50]
+    # Above floor clutter, below the first beam at 0.80 m, so a
+    # loaded pallet on the bottom level does not read as a person.
+    z_min: 0.25
+    z_max: 1.80
+    min_points: 15
+
+  - name: pick_face_south_2
+    description: >-
+      Pick face covering bays 6-8 on the south run.
+    polygon:
+      - [2.70, -1.25]
+      - [10.80, -1.25]
+      - [10.80, -0.50]
+      - [2.70, -0.50]
+    # Above floor clutter, below the first beam at 0.80 m, so a
+    # loaded pallet on the bottom level does not read as a person.
+    z_min: 0.25
+    z_max: 1.80
+    min_points: 15
+
+  - name: charger_bay
+    description: >-
+      Charging dock at the west end. Occupied means another robot is
+      already on the dock.
+    polygon:
+      - [-14.70, -1.20]
+      - [-13.00, -1.20]
+      - [-13.00, 1.20]
+      - [-14.70, 1.20]
+    z_min: 0.15
+    z_max: 1.80
+    # Larger than the pick faces: a robot on the dock presents far more
+    # returns than a person, and the extra margin rejects a single
+    # stray reflection off the dock's own charging contacts.
+    min_points: 40

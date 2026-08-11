@@ -1,0 +1,32 @@
+# Induced failures for the recovery evaluation.
+#
+# Times are seconds from mission start, chosen so each fault lands while the
+# robot is mid-leg rather than parked at a waypoint — a fault injected during a
+# 2 s pick dwell provokes nothing.
+#
+# Scheduled by time, not by robot position, so the run stays reproducible. If
+# faults fired on position, a robot that recovered differently would meet the
+# next fault in a different state and the comparison between runs would be
+# meaningless.
+
+faults:
+  # 1. Drop a pallet into the aisle ahead of the robot on its first leg.
+  #    Expect: replan, then a local costmap clear if the plan stays invalid.
+  - {at: 12.0, type: block_aisle, model: aisle_pallet_0, x: -6.0, y: 0.0, z: 0.075}
+
+  # 2. Wrong pose exactly one racking bay (2.7 m) from truth. This is the
+  #    aliasing case: the scan matches the wrong bay perfectly, so nothing local
+  #    can detect it and only AMCL's global map can pull it back.
+  - {at: 35.0, type: localisation_jump, x: 1.35, y: 0.0, yaw: 0.0}
+
+  # 3. Physically move the robot without telling anything. Harder than the
+  #    pose jump, because the estimate is right and the world is wrong.
+  - {at: 70.0, type: kidnap, model: warehouse_amr, x: 5.4, y: 0.0, z: 0.0}
+
+  # 4. Force a full global relocalisation and time how long reconvergence takes
+  #    in a space where every bay looks alike.
+  - {at: 95.0, type: relocalise}
+
+  # 5. Blind the LiDAR mid-aisle. Handled by the external relay; see
+  #    scripts/run_faults.sh.
+  - {at: 120.0, type: sensor_dropout, duration: 4.0}
