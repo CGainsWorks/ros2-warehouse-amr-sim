@@ -95,6 +95,14 @@ if [[ ${MISSION_STATUS} -ne 0 ]]; then
   echo "however far the robot got. See ${RESULTS}/mission.log." >&2
 fi
 
+# Path length per source first. It localises a fault to one link in the chain
+# in a way ATE cannot: an EKF shorter than every input it fuses is a fusion
+# fault, an input that is itself short is a sensor-pipeline fault, and the two
+# need different fixes.
+echo "--- odometry audit"
+python3 analysis/odometry_audit.py --results "${RESULTS}"   --output "${RESULTS}/odometry_audit.json"
+
+echo
 echo "--- localisation accuracy"
 python3 analysis/localisation_error.py \
   --estimate "${RESULTS}/amcl_pose.csv" \

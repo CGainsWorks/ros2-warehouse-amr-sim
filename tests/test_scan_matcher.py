@@ -236,6 +236,53 @@ class TestScanOdometry:
         assert odometry.pose == before
 
 
+class TestStartupSeedLock:
+    """The failure that pinned the published pose to the origin for a whole run."""
+
+    def test_keyframe_taken_before_odometry_is_retaken(self, floorplan):
+        """Scans arrive before /odom on every launch, so this always triggered.
+
+        A keyframe adopted with odom_pose=None leaves _ref_odom None, so
+        _initial_guess can only ever return zero. Unseeded ICP down a corridor of
+        parallel walls then converges to identity with near-perfect fitness, the
+        reported motion never reaches the keyframe threshold, the keyframe is
+        never re-taken, and _ref_odom stays None. The node published a pose stuck
+        at the origin for 103 s while accepting 99% of its matches.
+        """
+        odometry = ScanOdometry()
+        first = simulate_2d_scan(floorplan, (-8.0, 0.0, 0.0), seed=41)
+
+        # First scan beats the first /odom message.
+        assert odometry.update(first, odom_pose=None) is None
+        assert odometry._ref_odom is None
+
+        # Odometry arrives; the keyframe must be re-taken so a seed exists.
+        second = simulate_2d_scan(floorplan, (-7.95, 0.0, 0.0), seed=42)
+        assert odometry.update(second, odom_pose=(-7.95, 0.0, 0.0)) is None
+        assert odometry._ref_odom == (-7.95, 0.0, 0.0), "keyframe not re-seeded"
+
+        # And from here it tracks.
+        truth = (-7.95, 0.0, 0.0)
+        for step in range(12):
+            truth = se2_compose(truth, (0.08, 0.0, 0.0))
+            odometry.update(simulate_2d_scan(floorplan, truth, seed=50 + step), odom_pose=truth)
+
+        travelled = math.hypot(odometry.pose[0] + 7.95, odometry.pose[1])
+        assert travelled > 0.5, "pose still pinned near the origin: %.3f m" % travelled
+
+    def test_a_stale_keyframe_cannot_persist_indefinitely(self, floorplan):
+        """Age backstop: no failure may freeze the reference forever."""
+        odometry = ScanOdometry(max_keyframe_age=5)
+        truth = (-8.0, 0.0, 0.0)
+        odometry.update(simulate_2d_scan(floorplan, truth, seed=61), odom_pose=truth)
+
+        for step in range(12):
+            truth = se2_compose(truth, (0.01, 0.0, 0.0))  # too small to trigger distance
+            odometry.update(simulate_2d_scan(floorplan, truth, seed=70 + step), odom_pose=truth)
+
+        assert odometry.keyframes_forced > 0, "the age backstop never fired"
+
+
 class _FakeMatch:
     """Minimal stand-in for MatchResult, for exercising the gates directly."""
 

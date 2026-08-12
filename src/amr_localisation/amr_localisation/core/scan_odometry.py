@@ -61,6 +61,7 @@ class ScanOdometry:
         max_mean_residual: float = 0.030,
         require_converged: bool = True,
         retry_unseeded: bool = True,
+        max_keyframe_age: int = 50,
         max_correspondence_distance: float = 0.50,
         max_iterations: int = 50,
         trim_ratio: float = 0.80,
@@ -73,6 +74,7 @@ class ScanOdometry:
         self.max_mean_residual = max_mean_residual
         self.require_converged = require_converged
         self.retry_unseeded = retry_unseeded
+        self.max_keyframe_age = max_keyframe_age
         self.max_correspondence_distance = max_correspondence_distance
         self.max_iterations = max_iterations
         self.trim_ratio = trim_ratio
@@ -82,6 +84,8 @@ class ScanOdometry:
         self.matched = 0
         self.rejected = 0
         self.reseeded = 0
+        self.keyframes_forced = 0
+        self._since_keyframe = 0
 
         self._ref_points: Optional[np.ndarray] = None
         self._ref_pose: Pose = self.pose
@@ -92,6 +96,7 @@ class ScanOdometry:
         self._ref_points = points
         self._ref_pose = pose
         self._ref_odom = odom_pose
+        self._since_keyframe = 0
 
     def _match(self, points: np.ndarray, guess: Pose) -> Optional[MatchResult]:
         return match_scans(
@@ -185,6 +190,27 @@ class ScanOdometry:
             self._adopt_keyframe(points, self.pose, odom_pose)
             return None
 
+        # A keyframe taken before the first wheel-odometry message has no seed
+        # reference, so _initial_guess can only return zero. Re-take it now that
+        # odometry exists.
+        #
+        # This was not a cosmetic startup wrinkle. Scans arrive before /odom on
+        # every launch, so the very first keyframe always had _ref_odom None, and
+        # the resulting lock was self-reinforcing: unseeded ICP in a corridor of
+        # parallel walls converges to identity with near-perfect fitness, so the
+        # reported motion never crossed the keyframe threshold, so the keyframe
+        # was never re-taken, so _ref_odom stayed None. The node then published a
+        # pose pinned to the origin for the entire run while accepting 99% of its
+        # matches. Measured over 103 s: 49 mm of net translation and no yaw
+        # tracking at all, while the robot drove 11.5 m and turned through more
+        # than a radian. Fused differentially, that dragged the EKF down to 66%
+        # of the true distance travelled and left AMCL lagging further behind
+        # every second.
+        if self._ref_odom is None and odom_pose is not None:
+            self._adopt_keyframe(points, self.pose, odom_pose)
+            return None
+
+        self._since_keyframe += 1
         guess = self._initial_guess(odom_pose)
         result = self._match(points, guess)
 
@@ -221,9 +247,19 @@ class ScanOdometry:
         previous = self.pose
         self.pose = se2_compose(self._ref_pose, result.pose)
 
+        # Age is a backstop, not the normal path. Distance and rotation are what
+        # should trigger a keyframe; the age limit exists so that ANY failure
+        # which suppresses the measured motion cannot silently freeze the
+        # reference forever, which is exactly how the startup lock above
+        # persisted for a whole run.
+        stale = self._since_keyframe >= self.max_keyframe_age
+        if stale:
+            self.keyframes_forced += 1
+
         keyframed = (
             math.hypot(result.dx, result.dy) >= self.keyframe_distance
             or abs(result.dtheta) >= self.keyframe_rotation
+            or stale
         )
         if keyframed:
             self._adopt_keyframe(points, self.pose, odom_pose)

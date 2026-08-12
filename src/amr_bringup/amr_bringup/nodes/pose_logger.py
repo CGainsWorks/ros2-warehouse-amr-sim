@@ -92,12 +92,24 @@ class PoseLogger(Node):
             "amcl": _CsvSink(output_dir / "amcl_pose.csv"),
             "ekf": _CsvSink(output_dir / "ekf_odom.csv"),
             "wheel": _CsvSink(output_dir / "wheel_odom.csv"),
+            # The LiDAR odometry that feeds the EKF as odom1. Logged because a
+            # component benchmark cannot see how this source behaves once it is
+            # fused: the offline benchmark scores the matcher's own poses on
+            # clean 10 Hz synthetic scans, while in simulation it runs at
+            # roughly 6 Hz under load and reaches the filter as differentiated
+            # pose deltas. Comparing this trace's path length against ground
+            # truth is what distinguishes "the matcher is wrong" from "the
+            # fusion of it is wrong".
+            "scan": _CsvSink(output_dir / "scan_odom.csv"),
         }
 
         self.create_subscription(Odometry, self._gt_topic, self._on_ground_truth, BEST_EFFORT)
         self.create_subscription(PoseWithCovarianceStamped, "/amcl_pose", self._on_amcl, 10)
         self.create_subscription(Odometry, "/odometry/filtered", self._on_ekf, 20)
         self.create_subscription(Odometry, "/odom", self._on_wheel, 20)
+        self.create_subscription(
+            Odometry, "/scan_odometry_node/scan_odom", self._on_scan_odom, 20
+        )
 
         if self.get_parameter("assert_no_cheating").value:
             self.create_timer(5.0, self._check_no_cheating)
@@ -140,6 +152,15 @@ class PoseLogger(Node):
         p = msg.pose.pose
         cov = msg.pose.covariance
         self._sinks["wheel"].write(
+            self._stamp(msg.header), p.position.x, p.position.y,
+            yaw_from_quat(p.orientation.x, p.orientation.y, p.orientation.z, p.orientation.w),
+            float(cov[0]), float(cov[7]), float(cov[35]),
+        )
+
+    def _on_scan_odom(self, msg: Odometry) -> None:
+        p = msg.pose.pose
+        cov = msg.pose.covariance
+        self._sinks["scan"].write(
             self._stamp(msg.header), p.position.x, p.position.y,
             yaw_from_quat(p.orientation.x, p.orientation.y, p.orientation.z, p.orientation.w),
             float(cov[0]), float(cov[7]), float(cov[35]),

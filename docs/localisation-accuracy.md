@@ -7,17 +7,20 @@ categories have very different evidential weight.
 
 | | Status | Reproduce with |
 |---|---|---|
-| **LiDAR odometry vs ground truth** | Measured. Numbers below. | `make scan-odometry` |
-| **Scan matcher per-match error** | Measured. Numbers below. | `make test` |
-| **AMCL vs Gazebo ground truth** | **Not yet measured.** | `make eval` |
-| **EKF vs Gazebo ground truth** | **Not yet measured.** | `make eval` |
+| **LiDAR odometry, offline benchmark** | Measured. Good. | `make scan-odometry` |
+| **Scan matcher per-match error** | Measured. Good. | `make test` |
+| **AMCL vs Gazebo ground truth** | Measured. **Not acceptable.** | `make eval` |
+| **EKF vs Gazebo ground truth** | Measured. Within 8% of true distance. | `make eval` |
+| **Recovery matrix** | Not produced — no mission completes. | `make faults` |
 
 The first two need only Python, numpy and scipy, run in seconds on any machine,
-and are exercised by CI on every push. The last two require a Gazebo run, which
-has not been performed — the evaluation pipeline that produces them
-(`pose_logger` → `analysis/localisation_error.py`) is implemented and tested, but
-no numbers from it are quoted here because none have been generated. There are no
-placeholder figures in this file.
+and are exercised by CI on every push. The rest require a Gazebo run.
+
+Read the offline and simulated sections together, because **they disagree**, and
+the disagreement is the most useful thing on this page: the offline benchmark
+says the scan matcher cuts ATE by 82%, while in simulation the same code tracked
+nothing at all. There are no placeholder figures here — where something has not
+been produced, it says so.
 
 ## Metrics, and why three of them
 
@@ -150,91 +153,92 @@ first attempt at 0.70 fitness rejected a correct 0.10 m match scoring 0.671;
 
 ---
 
-## Measured in simulation — and the result is bad
+## Measured in simulation — and still not good enough
 
-The Gazebo evaluation now runs end to end. The numbers below are real, and they
-say the stack does **not** yet localise acceptably. They are recorded here in
-full rather than withheld until they improve, because the disagreement between
-them and the component benchmark above is the most useful thing on this page.
+The Gazebo evaluation runs end to end. The numbers say the stack does **not** yet
+localise acceptably, and they are published in full rather than withheld until
+they improve.
 
-Two runs, identical except for `USE_SCAN_ODOMETRY`:
+Latest run, scan odometry enabled, 148 s and 14.5 m of ground-truth travel:
 
-| | scan odometry ON | scan odometry OFF |
-|---|---|---|
-| AMCL ATE RMSE | 4.53 m | 4.31 m |
-| AMCL ATE median | 5.30 m | 2.92 m |
-| AMCL yaw RMSE | 33.6° | 88.6° |
-| AMCL jumps > 0.5 m | 1 | 5 |
-| Wheel odometry ATE RMSE | 0.74 m | 1.59 m |
-| Wheel odometry ATE median | 0.071 m | 1.56 m |
-| Mission outcome | aborted | aborted |
-| Recoveries | 2 spin, 2 back-up, 2 wait | 2 spin, 2 back-up, 2 wait |
+| | value |
+|---|---|
+| AMCL ATE RMSE | 6.65 m |
+| AMCL yaw RMSE | 102.9° |
+| AMCL jumps > 0.5 m | 2 |
+| Wheel odometry ATE RMSE | 1.35 m |
+| Mission outcome | does not complete |
 
-### The EKF loses 40% of the robot's motion
+### Path length is the diagnostic, not ATE
 
-Path length over each run is what exposes it:
+`analysis/odometry_audit.py` compares how far each source *thinks* the robot
+went. It localises a fault to one link in the chain in a way ATE cannot: a
+lagging estimate and a noisy one report similar ATE, but only one of them shows
+up as missing distance.
 
-| | scan odometry ON | scan odometry OFF |
-|---|---|---|
-| Ground truth | 10.56 m | 10.00 m |
-| Wheel odometry | 10.88 m | 13.24 m |
-| **EKF output** | **6.47 m** | 13.29 m |
+| Source | Path | Net | vs truth |
+|---|---|---|---|
+| Ground truth | 14.54 m | 11.53 m | — |
+| Wheel odometry | 19.71 m | 10.46 m | +36% |
+| LiDAR scan odometry | 5.08 m | **0.10 m** | −65% |
+| EKF fused | 13.39 m | 5.37 m | −8% |
+| AMCL | 12.49 m | 4.30 m | −14% |
 
-With the scan matcher disabled the EKF tracks wheel odometry almost exactly
-(13.29 against 13.24). With it enabled the EKF reports 6.47 m where the wheels
-report 10.88 m and the robot actually travelled 10.56 m — it is discarding
-roughly 40% of the motion.
+Two things fall straight out. Wheel odometry over-reports by 36%, which is slip
+during the recovery spins — exactly what the LiDAR is in the stack to correct,
+and it is correcting it: the EKF lands within 8% of truth where its wheel input
+is 36% over. And the scan matcher's own published pose has a **net displacement
+of 0.10 m** while the robot moved 11.5 m. It is damping the wheel slip usefully
+and tracking nothing.
 
-That explains the AMCL behaviour completely. AMCL consumes `/odometry/filtered`,
-so a fused estimate that under-reports motion makes the particle filter lag
-further behind reality every second. Its error profile is not the scatter of a
-diverging filter, it is a monotonic lag: 0.18 m, 1.24 m, 2.26 m, 3.51 m, then
-frozen at (−7.92, −2.09) while the robot drives on to −2.34. Nav2 then fails to
-make progress, runs its recovery ladder and aborts.
+### The startup seed lock — found, fixed
 
-### Why this matters more than the numbers
+The first version of this run had the EKF at −34% instead of −8%. The cause was a
+race with a self-reinforcing lock:
 
-The offline benchmark says the scan matcher reduces ATE by 82%. The end-to-end
-run says enabling it costs the EKF 40% of the robot's motion. **Both
-measurements are correct**; they measure different things, and only the second
-one is the system.
+1. Scans arrive before the first `/odom` on every launch, so the first keyframe
+   was adopted with `_ref_odom = None`.
+2. `_initial_guess` therefore returned zero, permanently.
+3. Unseeded ICP down a corridor of parallel walls converges to *identity* with
+   near-perfect fitness — the walls align at any x, and the 80% trimming
+   discards the racking uprights, which are the only points that constrain
+   translation along the aisle, as outliers.
+4. Reported motion never reached the keyframe threshold, so the keyframe was
+   never re-taken, so `_ref_odom` stayed `None`.
 
-The component benchmark feeds the matcher clean synthetic scans at a fixed
-10 Hz and scores its pose directly. In the simulation it runs against a Gazebo
-LiDAR at roughly 6 Hz under load, its output is fused *differentially*, and what
-reaches the EKF is a sequence of pose deltas rather than a trajectory. A
-systematic under-estimate in those deltas — from stale keyframes, degraded
-overlap, or gaps left by rejected matches — biases the filter slow no matter how
-good the matcher's own poses look in isolation.
+The node published a pose pinned to the origin for 103 s while accepting 99% of
+its matches and reporting a 1% reject rate. Every health signal it had said it
+was fine.
 
-This is the entire argument for evaluating end to end rather than trusting a
-green component benchmark, and it is why the ablation switch exists.
+Two fixes: re-take the keyframe as soon as wheel odometry becomes available, and
+a `max_keyframe_age` backstop so that no fault which suppresses measured motion
+can freeze the reference indefinitely. Both have regression tests in
+`TestStartupSeedLock`.
 
-### Outstanding
+### Outstanding, and honestly outstanding
 
-Not fixed, and honestly flagged rather than papered over:
+1. **The scan matcher still does not track.** Net 0.10 m over 11.5 m even with
+   the seed restored. The corridor degeneracy in step 3 above is the likely
+   remaining cause and the trimming is the prime suspect: it removes precisely
+   the sparse points that constrain motion along a corridor. Worth testing with
+   `trim_ratio: 1.0`, or with a point-to-line metric which does not have this
+   failure mode.
+2. **AMCL diverges** (6.65 m ATE, 102.9° yaw). Downstream of (1) in part, but
+   not entirely.
+3. **No mission completes.** Capped at 400 s wall clock, and Gazebo runs at
+   roughly 0.3–0.5× real time here.
 
-1. **The scan-odometry contribution to the EKF is wrong.** The next step is to
-   instrument `/scan_odometry_node/scan_odom` against ground truth during a
-   simulated run — the offline benchmark cannot see this failure by
-   construction. Fusing the node's twist directly instead of differentiating its
-   pose is the first thing to try.
-2. **AMCL is poor in both configurations** (4.3–4.5 m ATE). Some of that is
-   downstream of (1), but the yaw RMSE of 88.6° without the scan matcher
-   suggests the motion model is also mis-tuned for this base.
-3. **Wheel odometry over-reports by 32% in the ablation run** (13.24 m against
-   10.00 m), which is slip during the recovery spins. Real, and exactly what the
-   scan matcher is supposed to correct.
-4. **No mission has completed.** Both runs abort. The mission is capped at 400 s
-   of wall clock and Gazebo runs at roughly 0.3–0.5× real time here, so a
-   six-waypoint mission over ~50 m does not fit even when navigation behaves.
+### Why this is worth publishing
 
-Reproduce either run with:
+The offline benchmark reports the scan matcher cutting ATE by 82%. In
+simulation the same code, unchanged, tracked nothing at all. Both measurements
+are correct and only the second is the system.
 
-```bash
-docker compose -f docker/docker-compose.yml run --rm eval                          # with scan odometry
-docker compose -f docker/docker-compose.yml run --rm -e USE_SCAN_ODOMETRY=false eval
-```
+The benchmark seeds every match from accurate wheel odometry and scores the
+matcher's own poses on clean 10 Hz synthetic scans. It cannot see a startup race
+that never occurs in it, and it cannot see corridor degeneracy because the seed
+hides it. That is the argument for end-to-end evaluation over a green component
+benchmark, and it is why the ablation switch and the odometry audit exist.
 
 ## How to regenerate these
 

@@ -77,12 +77,27 @@ class ScanOdometryNode(Node):
         )
         self.declare_parameter(
             "min_fitness",
-            0.55,
+            0.60,
             _describe(
-                "Inlier fraction below which the match is discarded. The matcher "
-                "trims to 0.80 by design, so a healthy match sits just under that; "
-                "0.55 is comfortably below normal operation and comfortably above "
-                "the values seen when the scan is genuinely unmatchable."
+                "Inlier fraction below which the match is discarded. Must match "
+                "the calibrated default in ScanOdometry: correct matches have a "
+                "5th percentile of 0.78 with a tail to 0.38, incorrect ones a "
+                "median of 0.47, and 0.60 sits between them. This parameter "
+                "overrides the core default, so a stale value here silently "
+                "un-does the calibration."
+            ),
+        )
+        self.declare_parameter(
+            "max_keyframe_age",
+            50,
+            _describe(
+                "Force a new keyframe after this many matches regardless of "
+                "measured motion. 50 is 5 s at 10 Hz. A backstop, not the normal "
+                "path: distance and rotation should trigger keyframes. It exists "
+                "because any fault that suppresses the measured motion would "
+                "otherwise freeze the reference forever, which is exactly how a "
+                "missing wheel-odometry seed pinned the published pose to the "
+                "origin for an entire run."
             ),
         )
         self.declare_parameter("max_correspondence_distance", 0.50, _describe("ICP association cutoff, metres."))
@@ -121,6 +136,7 @@ class ScanOdometryNode(Node):
             keyframe_distance=float(self.get_parameter("keyframe_distance").value),
             keyframe_rotation=float(self.get_parameter("keyframe_rotation").value),
             min_fitness=float(self.get_parameter("min_fitness").value),
+            max_keyframe_age=int(self.get_parameter("max_keyframe_age").value),
             max_correspondence_distance=float(
                 self.get_parameter("max_correspondence_distance").value
             ),
