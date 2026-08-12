@@ -28,8 +28,15 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-echo "--- starting simulation (headless)"
+# The ablation: USE_SCAN_ODOMETRY=false leaves the EKF on wheel odometry and the
+# IMU alone. Running the evaluation both ways is what isolates the LiDAR
+# odometry's end-to-end contribution, as opposed to the component benchmark in
+# analysis/scan_odometry_benchmark.py.
+USE_SCAN_ODOMETRY="${USE_SCAN_ODOMETRY:-true}"
+
+echo "--- starting simulation (headless, scan odometry: ${USE_SCAN_ODOMETRY})"
 setsid ros2 launch amr_bringup simulation.launch.py headless:=true \
+  use_scan_odometry:="${USE_SCAN_ODOMETRY}" \
   > "${RESULTS}/simulation.log" 2>&1 &
 SIM_PID=$!
 
@@ -96,10 +103,15 @@ python3 analysis/localisation_error.py \
   --title "AMCL against Gazebo ground truth"
 
 echo
+# --align, because wheel odometry is in the odom frame whose origin is the
+# robot's start pose, not the map origin. Without it a flawless odometry scores
+# an ATE equal to the distance between the two frames — 12.0 m here, constant to
+# the millimetre. AMCL above needs no alignment; it publishes in map already.
 python3 analysis/localisation_error.py \
   --estimate "${RESULTS}/wheel_odom.csv" \
   --reference "${RESULTS}/ground_truth.csv" \
   --output "${RESULTS}/wheel_odom_error.json" \
+  --align \
   --title "Wheel odometry against Gazebo ground truth (baseline)"
 
 echo

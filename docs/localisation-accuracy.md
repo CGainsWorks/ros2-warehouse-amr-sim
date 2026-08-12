@@ -150,7 +150,93 @@ first attempt at 0.70 fitness rejected a correct 0.10 m match scoring 0.671;
 
 ---
 
-## Not yet measured: AMCL and the EKF against Gazebo
+## Measured in simulation — and the result is bad
+
+The Gazebo evaluation now runs end to end. The numbers below are real, and they
+say the stack does **not** yet localise acceptably. They are recorded here in
+full rather than withheld until they improve, because the disagreement between
+them and the component benchmark above is the most useful thing on this page.
+
+Two runs, identical except for `USE_SCAN_ODOMETRY`:
+
+| | scan odometry ON | scan odometry OFF |
+|---|---|---|
+| AMCL ATE RMSE | 4.53 m | 4.31 m |
+| AMCL ATE median | 5.30 m | 2.92 m |
+| AMCL yaw RMSE | 33.6° | 88.6° |
+| AMCL jumps > 0.5 m | 1 | 5 |
+| Wheel odometry ATE RMSE | 0.74 m | 1.59 m |
+| Wheel odometry ATE median | 0.071 m | 1.56 m |
+| Mission outcome | aborted | aborted |
+| Recoveries | 2 spin, 2 back-up, 2 wait | 2 spin, 2 back-up, 2 wait |
+
+### The EKF loses 40% of the robot's motion
+
+Path length over each run is what exposes it:
+
+| | scan odometry ON | scan odometry OFF |
+|---|---|---|
+| Ground truth | 10.56 m | 10.00 m |
+| Wheel odometry | 10.88 m | 13.24 m |
+| **EKF output** | **6.47 m** | 13.29 m |
+
+With the scan matcher disabled the EKF tracks wheel odometry almost exactly
+(13.29 against 13.24). With it enabled the EKF reports 6.47 m where the wheels
+report 10.88 m and the robot actually travelled 10.56 m — it is discarding
+roughly 40% of the motion.
+
+That explains the AMCL behaviour completely. AMCL consumes `/odometry/filtered`,
+so a fused estimate that under-reports motion makes the particle filter lag
+further behind reality every second. Its error profile is not the scatter of a
+diverging filter, it is a monotonic lag: 0.18 m, 1.24 m, 2.26 m, 3.51 m, then
+frozen at (−7.92, −2.09) while the robot drives on to −2.34. Nav2 then fails to
+make progress, runs its recovery ladder and aborts.
+
+### Why this matters more than the numbers
+
+The offline benchmark says the scan matcher reduces ATE by 82%. The end-to-end
+run says enabling it costs the EKF 40% of the robot's motion. **Both
+measurements are correct**; they measure different things, and only the second
+one is the system.
+
+The component benchmark feeds the matcher clean synthetic scans at a fixed
+10 Hz and scores its pose directly. In the simulation it runs against a Gazebo
+LiDAR at roughly 6 Hz under load, its output is fused *differentially*, and what
+reaches the EKF is a sequence of pose deltas rather than a trajectory. A
+systematic under-estimate in those deltas — from stale keyframes, degraded
+overlap, or gaps left by rejected matches — biases the filter slow no matter how
+good the matcher's own poses look in isolation.
+
+This is the entire argument for evaluating end to end rather than trusting a
+green component benchmark, and it is why the ablation switch exists.
+
+### Outstanding
+
+Not fixed, and honestly flagged rather than papered over:
+
+1. **The scan-odometry contribution to the EKF is wrong.** The next step is to
+   instrument `/scan_odometry_node/scan_odom` against ground truth during a
+   simulated run — the offline benchmark cannot see this failure by
+   construction. Fusing the node's twist directly instead of differentiating its
+   pose is the first thing to try.
+2. **AMCL is poor in both configurations** (4.3–4.5 m ATE). Some of that is
+   downstream of (1), but the yaw RMSE of 88.6° without the scan matcher
+   suggests the motion model is also mis-tuned for this base.
+3. **Wheel odometry over-reports by 32% in the ablation run** (13.24 m against
+   10.00 m), which is slip during the recovery spins. Real, and exactly what the
+   scan matcher is supposed to correct.
+4. **No mission has completed.** Both runs abort. The mission is capped at 400 s
+   of wall clock and Gazebo runs at roughly 0.3–0.5× real time here, so a
+   six-waypoint mission over ~50 m does not fit even when navigation behaves.
+
+Reproduce either run with:
+
+```bash
+docker compose -f docker/docker-compose.yml run --rm eval                          # with scan odometry
+docker compose -f docker/docker-compose.yml run --rm -e USE_SCAN_ODOMETRY=false eval
+```
+
+## How to regenerate these
 
 To generate these:
 

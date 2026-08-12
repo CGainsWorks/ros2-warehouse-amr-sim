@@ -125,6 +125,66 @@ class TestMetrics:
         assert np.all(yaw < 0.05), "yaw error did not wrap; got %s" % yaw
 
 
+class TestAlignment:
+    """Regression guard for a bug that made the odometry baseline meaningless."""
+
+    def test_perfect_odometry_in_a_different_frame_scores_zero_when_aligned(self):
+        """The exact failure that was shipped.
+
+        Wheel odometry starts at the origin of the odom frame; ground truth
+        starts wherever the robot is in the map — x = -12 in this warehouse.
+        Compared raw, a *flawless* odometry reports an ATE of exactly 12.0 m,
+        constant to the millimetre. The giveaway is the standard deviation: an
+        error that never varies is not an error, it is an offset.
+        """
+        truth = _straight_line(n=101, duration=10.0)
+        truth = PoseLog(t=truth.t, x=truth.x - 12.0, y=truth.y, yaw=truth.yaw)
+        # Identical motion, but expressed from an origin at (0, 0).
+        odom = PoseLog(t=truth.t, x=truth.x + 12.0, y=truth.y, yaw=truth.yaw)
+
+        unaligned = evaluate(odom, truth)
+        assert unaligned.ate_rmse_m == pytest.approx(12.0, abs=1e-6)
+        assert unaligned.ate_std_m == pytest.approx(0.0, abs=1e-9), "a constant offset, not an error"
+
+        aligned = evaluate(odom, truth, align=True)
+        assert aligned.ate_rmse_m == pytest.approx(0.0, abs=1e-9)
+
+    def test_alignment_preserves_genuine_drift(self):
+        """Aligning the first pose must not absorb the error being measured."""
+        truth = _straight_line(n=101, duration=10.0, speed=1.0)
+        truth = PoseLog(t=truth.t, x=truth.x - 12.0, y=truth.y, yaw=truth.yaw)
+        # 5% scale error, in the odom frame.
+        drifting = PoseLog(t=truth.t, x=(truth.x + 12.0) * 1.05, y=truth.y, yaw=truth.yaw)
+
+        aligned = evaluate(drifting, truth, align=True)
+        # 5% of 10 m travelled accumulates to 0.5 m by the end.
+        assert aligned.ate_max_m == pytest.approx(0.5, abs=0.02)
+        assert aligned.ate_std_m > 0.1, "drift was flattened away by the alignment"
+
+    def test_alignment_handles_a_rotated_frame(self):
+        """The odom frame is usually rotated relative to map, not just offset.
+
+        The truth here is the genuine rigid image of the odometry: the same
+        path rotated by 0.7 rad about the origin and translated. Rotating the
+        poses without rotating the path would describe a robot driving sideways,
+        which is not what a frame change looks like.
+        """
+        odom = _straight_line(n=51, duration=5.0)
+
+        theta, tx, ty = 0.7, -3.0, 2.0
+        c, s = math.cos(theta), math.sin(theta)
+        truth = PoseLog(
+            t=odom.t,
+            x=c * odom.x - s * odom.y + tx,
+            y=s * odom.x + c * odom.y + ty,
+            yaw=odom.yaw + theta,
+        )
+
+        aligned = evaluate(odom, truth, align=True)
+        assert aligned.ate_rmse_m == pytest.approx(0.0, abs=1e-6)
+        assert aligned.yaw_rmse_deg == pytest.approx(0.0, abs=1e-6)
+
+
 class TestNEES:
     def test_none_without_covariance(self):
         log = _straight_line()

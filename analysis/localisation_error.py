@@ -152,6 +152,50 @@ def interpolate_to(reference: PoseLog, times: np.ndarray) -> PoseLog:
     )
 
 
+def align_to_first_pose(estimate: PoseLog, reference: PoseLog) -> PoseLog:
+    """Express ``estimate`` in the reference's frame using their first samples.
+
+    Required whenever the estimate is odometry. Odometry lives in the ``odom``
+    frame, whose origin is wherever the robot happened to start; ground truth
+    lives in ``world``. Comparing them raw measures the distance between two
+    coordinate origins, not any error: in this warehouse the robot starts at
+    x = -12, so a *perfect* wheel odometry scores an ATE of 12.0 m, constant to
+    the millimetre. That is what the first version of the evaluation reported,
+    and the giveaway was the standard deviation — an error that never varies is
+    not an error.
+
+    AMCL output needs no alignment: it is already in ``map``.
+
+    Only the single rigid transform taking ``estimate[0]`` onto ``reference[0]``
+    is applied. Full Umeyama alignment over the whole trajectory would flatter
+    the result by absorbing part of the drift being measured.
+    """
+    if len(estimate) == 0 or len(reference) == 0:
+        return estimate
+
+    # Reference pose at the estimate's first timestamp, so the two are aligned
+    # in time as well as space.
+    ref0 = interpolate_to(reference, estimate.t[:1])
+    rx, ry, ryaw = float(ref0.x[0]), float(ref0.y[0]), float(ref0.yaw[0])
+    ex, ey, eyaw = float(estimate.x[0]), float(estimate.y[0]), float(estimate.yaw[0])
+
+    dyaw = wrap_angle(ryaw - eyaw)
+    c, s = math.cos(dyaw), math.sin(dyaw)
+
+    dx = estimate.x - ex
+    dy = estimate.y - ey
+
+    return PoseLog(
+        t=estimate.t,
+        x=rx + c * dx - s * dy,
+        y=ry + s * dx + c * dy,
+        yaw=wrap_angle(estimate.yaw + dyaw),
+        cov_xx=estimate.cov_xx,
+        cov_yy=estimate.cov_yy,
+        cov_yawyaw=estimate.cov_yawyaw,
+    )
+
+
 def _overlap_mask(times: np.ndarray, reference: PoseLog, max_gap: float) -> np.ndarray:
     """Samples that lie inside the reference's time span and near a real sample.
 
@@ -280,8 +324,16 @@ def evaluate(
     rpe_delta_s: float = 1.0,
     max_gap_s: float = 0.2,
     jump_threshold_m: float = 0.5,
+    align: bool = False,
 ) -> ErrorSummary:
-    """Full comparison of an estimate against a reference."""
+    """Full comparison of an estimate against a reference.
+
+    ``align`` must be True when the estimate is odometry, expressed in the
+    ``odom`` frame rather than ``map``. See :func:`align_to_first_pose`.
+    """
+    if align:
+        estimate = align_to_first_pose(estimate, reference)
+
     mask = _overlap_mask(estimate.t, reference, max_gap_s)
     if mask.sum() < 2:
         raise ValueError(
@@ -396,11 +448,21 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--output", help="Write the summary as JSON here.")
     parser.add_argument("--rpe-delta", type=float, default=1.0, help="RPE window in seconds.")
     parser.add_argument("--title", default="Localisation accuracy")
+    parser.add_argument(
+        "--align",
+        action="store_true",
+        help=(
+            "Align the estimate's first pose onto the reference before scoring. "
+            "REQUIRED for odometry, which lives in the odom frame; without it a "
+            "perfect wheel odometry scores an ATE equal to the distance between "
+            "the two frame origins. Do NOT use for AMCL, which is already in map."
+        ),
+    )
     args = parser.parse_args(argv)
 
     estimate = load_pose_csv(args.estimate)
     reference = load_pose_csv(args.reference)
-    summary = evaluate(estimate, reference, rpe_delta_s=args.rpe_delta)
+    summary = evaluate(estimate, reference, rpe_delta_s=args.rpe_delta, align=args.align)
 
     print(format_report(summary, args.title))
 

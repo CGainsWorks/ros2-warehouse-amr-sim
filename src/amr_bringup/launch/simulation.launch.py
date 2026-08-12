@@ -114,10 +114,26 @@ def generate_launch_description() -> LaunchDescription:
             # scan callback has a TF tree to work with.
             TimerAction(period=6.0, actions=[localisation]),
 
-            # Perception can start with localisation: the segmentation node
-            # works in base_footprint and does not need the map.
+            # Nav2 before perception, and the gap is deliberate.
+            #
+            # The two perception nodes each do roughly 35 ms of numpy per scan at
+            # 10 Hz. Starting them alongside Nav2 puts that load on the machine
+            # exactly while the lifecycle manager is building costmaps and
+            # stepping seven servers through configure/activate. On a loaded host
+            # that starves the manager: controller_server and smoother_server
+            # come up, planner_server stops answering its lifecycle service
+            # altogether, and the bringup stalls with no error logged anywhere.
+            # planner_server configures in well under a second when it is not
+            # competing for CPU.
+            #
+            # Nav2 tolerates its observation sources being absent for the first
+            # few seconds — the costmap simply warns that a buffer has not been
+            # updated — so deferring perception costs nothing and removes the
+            # contention.
+            TimerAction(period=10.0, actions=[navigation]),
+
             TimerAction(
-                period=6.0,
+                period=28.0,
                 actions=[
                     Node(
                         package="amr_perception",
@@ -140,9 +156,6 @@ def generate_launch_description() -> LaunchDescription:
                     ),
                 ],
             ),
-
-            # Nav2 last: its costmaps need TF and a map to configure against.
-            TimerAction(period=10.0, actions=[navigation]),
 
             Node(
                 package="rviz2",

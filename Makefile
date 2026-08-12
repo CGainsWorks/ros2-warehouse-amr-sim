@@ -96,6 +96,7 @@ report:  ## Recompute every metric from existing logs in $(RESULTS)
 		--estimate $(RESULTS)/wheel_odom.csv \
 		--reference $(RESULTS)/ground_truth.csv \
 		--output $(RESULTS)/wheel_odom_error.json \
+		--align \
 		--title "Wheel odometry against Gazebo ground truth"
 	$(PYTHON) analysis/recovery_matrix.py \
 		--faults $(RESULTS)/faults.json \

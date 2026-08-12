@@ -110,13 +110,33 @@ scipy 1.13) and WSL Ubuntu 22.04 (Python 3.10, numpy 1.21, scipy 1.8) — every
 stochastic step takes a fixed seed, so the pipeline is deterministic end to end.
 Latency differs, as it should; the slower machine's figures are the ones quoted.
 
-### Not yet measured
+### End-to-end in Gazebo — runs, but does not yet localise well
 
-**AMCL and EKF accuracy against Gazebo ground truth has not been run.** The
-pipeline that produces it is implemented and tested, but no Gazebo run has been
-performed, so no numbers are quoted. Generate them with `make eval`. Likewise the
-recovery matrix — the faults and the ladder are implemented, the run is not done.
-See [docs/limitations.md](docs/limitations.md).
+The full stack now builds, launches and drives in Gazebo, and the evaluation
+produces real numbers. Those numbers are bad, and they are published anyway
+because the reason is the interesting part:
+
+| | scan odometry ON | scan odometry OFF |
+|---|---|---|
+| AMCL ATE RMSE | 4.53 m | 4.31 m |
+| Wheel odometry ATE RMSE | 0.74 m | 1.59 m |
+| Mission outcome | aborted | aborted |
+
+**The offline benchmark says the scan matcher cuts ATE by 82%. The end-to-end
+run says switching it on costs the EKF 40% of the robot's motion** — the filter
+reports 6.47 m where the wheels report 10.88 m and the robot travelled 10.56 m.
+AMCL consumes that estimate, so it lags further behind every second (0.18 → 1.24
+→ 2.26 → 3.51 m) until Nav2 gives up and runs its recovery ladder.
+
+Both measurements are correct. They measure different things, and only the
+second one is the system. That is the entire argument for evaluating end to end
+instead of trusting a green component benchmark, and it is why the ablation
+switch exists.
+
+Full diagnosis, the ablation table and the outstanding work are in
+[docs/localisation-accuracy.md](docs/localisation-accuracy.md). The recovery
+matrix is still unpopulated — the faults and the ladder are implemented, but no
+mission has completed, so there is nothing honest to tabulate yet.
 
 ---
 

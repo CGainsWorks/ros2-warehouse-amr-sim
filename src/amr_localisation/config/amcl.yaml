@@ -125,18 +125,29 @@ amcl:
     update_min_a: 0.20
 
     # -----------------------------------------------------------------
-    # Recovery. Both non-zero, which enables random particle injection when the
-    # short-term average measurement likelihood falls below the long-term one.
+    # Recovery: random particle injection, DISABLED.
     #
-    # This is switched on because the failure it addresses is one this warehouse
-    # actively provokes: racking bays at a fixed 2.7 m pitch mean a filter that
-    # has locked onto the wrong bay sees perfectly good likelihood scores and
-    # will never recover on its own. The cost is that a genuine transient — a
-    # forklift briefly filling the scan — can trigger unnecessary injection, so
-    # alpha_fast is kept at the low end of the usual range.
+    # This was originally enabled at the textbook 0.001 / 0.1, on the reasoning
+    # that a filter locked onto the wrong racking bay sees good likelihood
+    # scores and never recovers unaided. That reasoning is sound; the setting
+    # was still wrong, and the simulation showed why.
+    #
+    # Injection fires whenever the short-term average likelihood dips below the
+    # long-term one. Both averages start at zero, so the condition is met
+    # trivially during the first few updates — before the filter has converged
+    # at all. Measured: AMCL reported an x variance of 9.8 m^2 on its very first
+    # published pose from a known starting position, then diverged to
+    # (-14.88, 3.77) — inside a wall — with a variance of 31 m^2, six seconds
+    # into the run. Nav2 spent the rest of the mission in spin, back-up and wait
+    # recoveries before aborting.
+    #
+    # 0.0 / 0.0 disables it. The kidnapped-robot case is not left unhandled: it
+    # is dealt with explicitly through the /reinitialize_global_localization
+    # service, which the fault injector calls, and which is both controllable
+    # and observable rather than firing on its own during startup.
     # -----------------------------------------------------------------
-    recovery_alpha_slow: 0.001
-    recovery_alpha_fast: 0.10
+    recovery_alpha_slow: 0.0
+    recovery_alpha_fast: 0.0
 
     # How far into the future the map -> odom transform is post-dated. Must
     # exceed the interval between AMCL updates or consumers will intermittently
