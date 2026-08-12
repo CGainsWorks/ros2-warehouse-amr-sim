@@ -35,6 +35,23 @@
   <xacro:property name="caster_radius" value="0.04"/>
   <xacro:property name="caster_mass"   value="0.5"/>
 
+  <!-- Casters sit this far ABOVE the floor when the drive wheels are on it.
+       3 mm, and it is the difference between a robot that drives and one that
+       does not.
+
+       Sized so both casters and both wheels bottom out at exactly z = 0 and the
+       load split between them is numerically indeterminate. ODE resolves the
+       stiff sphere-plane point contacts first, lifting the chassis by a
+       hair, and the drive wheels end up carrying no normal force. They then
+       spin at exactly the commanded rate — 3.000 rad/s for 0.3 m/s — while the
+       robot sits still on two mu=0.02 casters. Every plugin reports success and
+       nothing in any log is wrong.
+
+       Lifting the casters puts the weight on the drive wheels, where it
+       belongs. The robot pitches a fraction of a degree onto whichever caster
+       is loaded, exactly as a real two-wheel-plus-caster AMR does. -->
+  <xacro:property name="caster_clearance" value="0.003"/>
+
   <!-- Sensor mounting. The 2D LiDAR sits low and forward, at the height that
        sees pallet feet and the underside of a shelf beam. The 3D LiDAR sits on
        a mast so its rings sweep the full 2.2 m racking height. -->
@@ -142,7 +159,7 @@
     <joint name="${prefix}_caster_joint" type="fixed">
       <parent link="base_link"/>
       <child link="${prefix}_caster_link"/>
-      <origin xyz="${x} 0 ${caster_radius - wheel_radius}" rpy="0 0 0"/>
+      <origin xyz="${x} 0 ${caster_radius - wheel_radius + caster_clearance}" rpy="0 0 0"/>
     </joint>
     <gazebo reference="${prefix}_caster_link">
       <mu1>0.02</mu1>

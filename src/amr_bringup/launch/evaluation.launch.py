@@ -6,8 +6,15 @@ nodes that observe and drive the run.
 """
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, TimerAction
+from launch.actions import (
+    DeclareLaunchArgument,
+    LogInfo,
+    RegisterEventHandler,
+    Shutdown,
+    TimerAction,
+)
 from launch.conditions import IfCondition
+from launch.event_handlers import OnProcessExit
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
@@ -17,6 +24,20 @@ def generate_launch_description() -> LaunchDescription:
     use_sim_time = LaunchConfiguration("use_sim_time")
     results_dir = LaunchConfiguration("results_dir")
     bringup_share = FindPackageShare("amr_bringup")
+
+    mission_runner = Node(
+        package="amr_bringup",
+        executable="mission_runner",
+        name="mission_runner",
+        output="screen",
+        parameters=[
+            {
+                "use_sim_time": use_sim_time,
+                "waypoints_file": LaunchConfiguration("waypoints_file"),
+                "output": [results_dir, "/mission.json"],
+            }
+        ],
+    )
 
     return LaunchDescription(
         [
@@ -51,22 +72,26 @@ def generate_launch_description() -> LaunchDescription:
             ),
 
             # Give Nav2 time to finish activating before offering it a mission.
+            # When the mission ends — succeeded, aborted or rejected — tear the
+            # whole launch down. Without this, pose_logger keeps spinning
+            # forever and the run only ends when the calling script's timeout
+            # fires, which wasted eight minutes per run before it was noticed.
+            # Shutdown also gives pose_logger a clean SIGINT so it flushes and
+            # closes its CSVs rather than leaving a truncated final line.
+            RegisterEventHandler(
+                OnProcessExit(
+                    target_action=mission_runner,
+                    on_exit=[
+                        LogInfo(msg="mission runner exited; shutting down the evaluation"),
+                        Shutdown(reason="mission complete"),
+                    ],
+                )
+            ),
+
             TimerAction(
                 period=5.0,
                 actions=[
-                    Node(
-                        package="amr_bringup",
-                        executable="mission_runner",
-                        name="mission_runner",
-                        output="screen",
-                        parameters=[
-                            {
-                                "use_sim_time": use_sim_time,
-                                "waypoints_file": LaunchConfiguration("waypoints_file"),
-                                "output": [results_dir, "/mission.json"],
-                            }
-                        ],
-                    ),
+                    mission_runner,
                     Node(
                         package="amr_bringup",
                         executable="fault_injector",

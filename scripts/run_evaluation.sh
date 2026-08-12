@@ -45,6 +45,36 @@ until ros2 topic echo /amcl_pose --once > /dev/null 2>&1; do
 done
 echo "--- localisation is up"
 
+# Nav2 must actually be ACTIVE before a mission is worth sending. If
+# bt_navigator failed to configure — a bad behaviour-tree path does exactly
+# this — the lifecycle manager aborts the bringup, and the only visible symptom
+# is a goal rejected in 0.4 s with nothing in the mission log to explain it.
+# Checking here turns that into a named failure before any time is spent.
+# The lifecycle manager activates seven servers in sequence, each of which
+# builds its costmaps and waits on TF. Under Gazebo running below real time that
+# takes well over a minute, so this deadline matches the localisation one rather
+# than being a tight "should be quick" guess — a gate that fires on a healthy
+# but slow startup is worse than no gate at all.
+TIMEOUT_NAV2="${TIMEOUT_NAV2:-180}"
+echo "--- waiting for Nav2 to activate (up to ${TIMEOUT_NAV2}s)"
+deadline=$((SECONDS + TIMEOUT_NAV2))
+until [[ "$(timeout 5 ros2 lifecycle get /bt_navigator 2>/dev/null)" == active* ]]; do
+  if (( SECONDS > deadline )); then
+    echo "ERROR: bt_navigator never reached the active state." >&2
+    echo "Lifecycle states:" >&2
+    for n in map_server amcl controller_server smoother_server planner_server \
+             behavior_server bt_navigator waypoint_follower velocity_smoother; do
+      printf '  %-20s %s\n' "$n" "$(timeout 5 ros2 lifecycle get "/$n" 2>/dev/null || echo unavailable)" >&2
+    done
+    echo "Relevant errors:" >&2
+    grep -iE '\[ERROR\]' "${RESULTS}/simulation.log" 2>/dev/null | sed 's/\[[0-9.]*\]//' \
+      | sort -u | head -10 >&2
+    exit 1
+  fi
+  sleep 3
+done
+echo "--- Nav2 active after ${SECONDS}s"
+
 echo "--- running mission"
 set +e
 timeout "${TIMEOUT_MISSION}" ros2 launch amr_bringup evaluation.launch.py \

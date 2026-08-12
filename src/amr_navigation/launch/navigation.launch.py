@@ -31,7 +31,27 @@ def generate_launch_description() -> LaunchDescription:
     use_sim_time = LaunchConfiguration("use_sim_time")
     params_file = LaunchConfiguration("params_file")
 
+    behaviour_trees = PathJoinSubstitution(
+        [FindPackageShare("amr_navigation"), "behavior_trees"]
+    )
+
     common = [params_file, {"use_sim_time": use_sim_time}]
+
+    # The behaviour tree paths must be resolved here, not in nav2_params.yaml.
+    # That file is plain YAML with no substitution support, so a
+    # $(find-pkg-share ...) written there reaches bt_navigator verbatim and it
+    # fails to configure. Overriding after the params file means the value is a
+    # real absolute path by the time the node sees it.
+    bt_navigator_params = common + [
+        {
+            "default_nav_to_pose_bt_xml": PathJoinSubstitution(
+                [behaviour_trees, "navigate_w_recovery.xml"]
+            ),
+            "default_nav_through_poses_bt_xml": PathJoinSubstitution(
+                [behaviour_trees, "navigate_through_poses_w_recovery.xml"]
+            ),
+        }
+    ]
 
     return LaunchDescription(
         [
@@ -79,7 +99,7 @@ def generate_launch_description() -> LaunchDescription:
                 executable="bt_navigator",
                 name="bt_navigator",
                 output="screen",
-                parameters=common,
+                parameters=bt_navigator_params,
             ),
             Node(
                 package="nav2_waypoint_follower",

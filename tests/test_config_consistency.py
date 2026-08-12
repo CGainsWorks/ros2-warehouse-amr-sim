@@ -88,17 +88,31 @@ class TestRobotGeometry:
         slipping wheel and will be chased as one."""
         assert _gazebo_scalar("wheel_diameter") == pytest.approx(2 * _xacro_property("wheel_radius"))
 
-    def test_costmap_footprint_matches_the_urdf_body(self, local_costmap, global_costmap):
-        """A footprint smaller than the robot lets it plan into the racking."""
+    def test_costmap_footprint_covers_the_widest_part_of_the_robot(
+        self, local_costmap, global_costmap
+    ):
+        """A footprint smaller than the robot lets it plan into the racking.
+
+        The widest point is NOT the chassis. The drive wheels are 0.05 m wide
+        centred at y = +/-0.25, so they reach y = +/-0.275, 25 mm proud of the
+        0.50 m chassis. A footprint set from base_width alone understates the
+        robot by exactly the parts that stick out furthest — which are the ones
+        that would clip a racking upright.
+        """
         length = _xacro_property("base_length")
-        width = _xacro_property("base_width")
+        chassis_half_width = _xacro_property("base_width") / 2.0
+        wheel_half_width = _xacro_property("wheel_separation") / 2.0 + _xacro_property("wheel_width") / 2.0
+        required_half_width = max(chassis_half_width, wheel_half_width)
 
         for costmap in (local_costmap, global_costmap):
             footprint = yaml.safe_load(costmap["footprint"])
             xs = [abs(p[0]) for p in footprint]
             ys = [abs(p[1]) for p in footprint]
             assert max(xs) == pytest.approx(length / 2.0), "footprint length disagrees with the URDF"
-            assert max(ys) == pytest.approx(width / 2.0), "footprint width disagrees with the URDF"
+            assert max(ys) >= required_half_width - 1e-9, (
+                "footprint half-width %.3f is narrower than the robot's widest point %.3f "
+                "(wheels reach beyond the chassis)" % (max(ys), required_half_width)
+            )
 
     def test_both_costmaps_use_the_same_footprint(self, local_costmap, global_costmap):
         assert local_costmap["footprint"] == global_costmap["footprint"]
@@ -358,10 +372,43 @@ class TestLocalisation:
         assert amcl["laser_max_range"] <= sensor_max
 
     def test_gazebo_odometry_is_encoder_derived_not_ground_truth(self):
-        """odometry_source 1 is ENCODER. 0 is WORLD, which publishes the
-        simulator's exact pose as odometry and removes every source of drift,
-        turning the localisation evaluation into a measurement of nothing."""
-        assert "<odometry_source>1</odometry_source>" in GAZEBO_XACRO.read_text(encoding="utf-8")
+        """odometry_source must be 0 (ENCODER). 1 is WORLD.
+
+        gazebo_plugins' ROS 2 GazeboRosDiffDrive declares
+            enum OdomSource { ENCODER = 0, WORLD = 1 };
+
+        This was previously set to 1 with a comment asserting that meant
+        ENCODER. It does not. WORLD publishes the simulator's exact pose as
+        odometry, so wheel odometry would have been drift-free, the EKF and
+        AMCL would have had nothing to correct, and every localisation number
+        in the docs would have been meaningless — while looking excellent.
+        Nothing in any log flags it.
+        """
+        text = GAZEBO_XACRO.read_text(encoding="utf-8")
+        match = re.search(r"<odometry_source>\s*(\d+)\s*</odometry_source>", text)
+        assert match, "odometry_source is unset; the plugin default is ENCODER but be explicit"
+        assert match.group(1) == "0", (
+            "odometry_source is %s (WORLD = simulator ground truth); it must be 0 (ENCODER) "
+            "or the localisation evaluation measures nothing" % match.group(1)
+        )
+
+    def test_casters_clear_the_floor(self):
+        """Casters must sit above the floor so the drive wheels carry the load.
+
+        With caster bottoms and wheel bottoms both at exactly z = 0, the load
+        split is numerically indeterminate: ODE resolves the stiff sphere-plane
+        contacts first, the drive wheels lose normal force, and the robot sits
+        still while its wheels spin at exactly the commanded rate. Every plugin
+        reports success and no log line is wrong.
+        """
+        clearance = _xacro_property("caster_clearance")
+        assert clearance > 0.0, (
+            "caster_clearance is %r; with zero clearance the drive wheels can end "
+            "up carrying no load and the robot will not move" % clearance
+        )
+        # Large enough to beat contact-solver noise, small enough that the pitch
+        # onto a caster stays negligible over the 0.54 m wheelbase.
+        assert 0.001 <= clearance <= 0.010
 
     def test_sensors_have_non_zero_noise(self):
         """A noiseless simulation produces numbers that cannot be reproduced on
@@ -406,13 +453,48 @@ class TestBehaviourTrees:
         for path in (SRC / "amr_navigation" / "behavior_trees").glob("*.xml"):
             ET.parse(path)
 
-    def test_bt_navigator_references_trees_that_exist(self, nav2):
-        params = nav2["bt_navigator"]["ros__parameters"]
-        for key in ("default_nav_to_pose_bt_xml", "default_nav_through_poses_bt_xml"):
-            referenced = Path(str(params[key]).strip()).name
-            assert (SRC / "amr_navigation" / "behavior_trees" / referenced).exists(), (
-                "%s points at %s, which does not exist" % (key, referenced)
+    def test_params_file_contains_no_launch_substitutions(self):
+        """A Nav2 params file is plain YAML — it resolves nothing.
+
+        Regression guard. `$(find-pkg-share amr_navigation)/behavior_trees/...`
+        in nav2_params.yaml is the natural thing to write and is silently
+        wrong: rclcpp passes the string through verbatim, bt_navigator dies
+        with `Couldn't open input XML file: $`, the lifecycle manager aborts
+        the entire navigation bringup, and every goal is then rejected in under
+        a second with nothing in the mission log explaining why.
+
+        Paths that need resolving belong in the launch file, which can do it.
+        """
+        text = NAV2_PARAMS.read_text(encoding="utf-8")
+        for line in text.splitlines():
+            code = line.split("#", 1)[0]  # the explanation in the comments is fine
+            assert "$(find-pkg-share" not in code and "$(find " not in code, (
+                "nav2_params.yaml contains an unexpanded launch substitution, "
+                "which reaches the node as a literal string: %r" % line.strip()
             )
+
+    def test_launch_file_supplies_the_behaviour_tree_paths(self):
+        """Since the YAML cannot, the launch file must — and to real files."""
+        launch = (SRC / "amr_navigation" / "launch" / "navigation.launch.py").read_text(
+            encoding="utf-8"
+        )
+        trees = SRC / "amr_navigation" / "behavior_trees"
+        for key in ("default_nav_to_pose_bt_xml", "default_nav_through_poses_bt_xml"):
+            assert key in launch, "%s is set nowhere; bt_navigator will use the Nav2 default" % key
+
+        for name in ("navigate_w_recovery.xml", "navigate_through_poses_w_recovery.xml"):
+            assert name in launch, "%s is not referenced by the launch file" % name
+            assert (trees / name).exists(), "%s is referenced but does not exist" % name
+
+    def test_evaluation_launch_shuts_down_with_the_mission(self):
+        """Otherwise pose_logger spins forever and every run costs a timeout."""
+        launch = (SRC / "amr_bringup" / "launch" / "evaluation.launch.py").read_text(
+            encoding="utf-8"
+        )
+        assert "OnProcessExit" in launch and "Shutdown" in launch, (
+            "evaluation.launch.py does not shut down when the mission ends, so a "
+            "run only finishes when the calling script's timeout fires"
+        )
 
     def test_recovery_node_names_match_what_the_mission_runner_watches(self):
         """The mission runner identifies recoveries by BT node name. Renaming a

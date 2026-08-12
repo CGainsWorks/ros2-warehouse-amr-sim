@@ -11,9 +11,10 @@ change that breaks one fails the test suite rather than the robot.
 
 | Quantity | Value | Source |
 |---|---|---|
-| Footprint | 0.70 × 0.50 m | `amr_description/urdf/amr.urdf.xacro` |
-| Inscribed radius | 0.25 m | half-width |
-| Circumscribed radius | 0.43 m | √(0.35² + 0.25²) |
+| Chassis | 0.70 × 0.50 m | `amr_description/urdf/amr.urdf.xacro` |
+| Footprint | 0.70 × 0.55 m | widest point — the wheels, not the chassis |
+| Inscribed radius | 0.275 m | half-width |
+| Circumscribed radius | 0.445 m | √(0.35² + 0.275²) |
 | Wheel radius | 0.10 m | URDF |
 | Wheel separation | 0.50 m | URDF |
 | Max wheel acceleration | 10 rad/s² | Gazebo diff drive plugin |
@@ -32,11 +33,11 @@ Two facts drive almost everything: the aisle is narrow relative to the robot
 
 ### `inflation_radius: 0.65` (both costmaps)
 
-= circumscribed radius (0.43) + 0.22 m margin.
+= circumscribed radius (0.445) + 0.205 m margin.
 
 Worked through for this aisle: racking faces sit at |y| = 1.40, so the inflated
 bands reach |y| = 0.75 and leave a **1.50 m zero-cost corridor** down the middle.
-The robot is 0.50 m wide, so it can sit entirely in zero-cost cells with 0.50 m
+The robot is 0.55 m wide, so it can sit entirely in zero-cost cells with 0.475 m
 clear either side.
 
 Push the radius to 0.9 m and that corridor closes completely. Every plan then
@@ -50,8 +51,8 @@ the inflation says are safe.
 ### `cost_scaling_factor: 3.0`
 
 Cost decays as `253 · exp(−k · (d − r_inscribed))`. At k = 3.0 the residual cost
-at the inflation boundary is `253 · exp(−3.0 · 0.40) = 76`, so there is a step
-from 76 to 0 at 0.65 m.
+at the inflation boundary is `253 · exp(−3.0 · 0.375) = 82`, so there is a step
+from 82 to 0 at 0.65 m.
 
 That discontinuity is a known property of Nav2's inflation layer and is
 **accepted here rather than eliminated**. Removing it would need k ≈ 8, which
@@ -70,9 +71,22 @@ replanning and recovery with nothing obviously wrong in either log.
 
 ### `footprint` as a polygon, not `robot_radius`
 
-A 0.43 m circumscribed circle around a 0.70 × 0.50 m robot claims 0.18 m of
+A 0.445 m circumscribed circle around a 0.70 × 0.55 m robot claims 0.17 m of
 clearance beside the robot that does not exist. In a 2.8 m aisle with 0.65 m
 inflation, that is the difference between a viable plan and none.
+
+### The footprint is wider than the chassis, on purpose
+
+0.55 m against a 0.50 m chassis. The drive wheels are 0.05 m wide centred at
+y = ±0.25, so they reach y = ±0.275 — 25 mm proud of the chassis on each side.
+
+Setting the footprint from `base_width`, which is the obvious thing to do and
+what this repository did until the robot was actually driven, understates the
+robot by exactly the parts that stick out furthest. Those parts are the wheels,
+and in a 2.8 m aisle the wheels are what would clip a racking upright. The
+footprint tracks the widest point of the robot, whatever that happens to be;
+`test_costmap_footprint_covers_the_widest_part_of_the_robot` computes it from
+`wheel_separation` and `wheel_width` rather than trusting `base_width`.
 
 ### Local costmap `6 × 6 m`
 
@@ -115,6 +129,38 @@ means a mapping gap or a localisation failure, and planning confidently through
 either is exactly wrong.
 
 ---
+
+### A Nav2 params file resolves nothing
+
+Worth its own heading because it cost a whole evaluation run.
+
+`nav2_params.yaml` is plain YAML read by rclcpp. It performs **no substitution**.
+Writing the natural-looking
+
+```yaml
+default_nav_to_pose_bt_xml: $(find-pkg-share amr_navigation)/behavior_trees/navigate_w_recovery.xml
+```
+
+passes that string through verbatim, and `bt_navigator` then fails to configure
+with:
+
+```
+[bt_navigator] Couldn't open input XML file: $
+[lifecycle_manager_navigation] Failed to change state for node: bt_navigator
+[lifecycle_manager_navigation] Failed to bring up all requested nodes. Aborting bringup.
+```
+
+The consequence is disproportionate: the lifecycle manager aborts the **entire**
+navigation bringup, so every subsequent goal is rejected in under a second, and
+the mission log says only `mission goal rejected by Nav2` with no hint as to
+why. Three lines in the simulation log explain it; nothing in the mission output
+does.
+
+Anything needing a package-relative path belongs in the launch file, which can
+resolve `FindPackageShare`. `navigation.launch.py` sets both tree paths by
+appending a parameter dictionary *after* the params file, so the override wins.
+`test_params_file_contains_no_launch_substitutions` fails the build if the
+pattern reappears.
 
 ## DWB
 

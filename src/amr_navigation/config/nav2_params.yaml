@@ -6,10 +6,18 @@
 #
 # THE ROBOT AND THE SPACE, since almost every number descends from these:
 #
-#   footprint            0.70 x 0.50 m rectangle
-#   inscribed radius     0.25 m  (half-width)
-#   circumscribed radius 0.43 m  (sqrt(0.35^2 + 0.25^2))
+#   chassis              0.70 x 0.50 m
+#   footprint            0.70 x 0.55 m rectangle
+#   inscribed radius     0.275 m  (half-width)
+#   circumscribed radius 0.445 m  (sqrt(0.35^2 + 0.275^2))
 #   wheel separation     0.50 m, differential drive
+#
+# The footprint is WIDER than the chassis, and deliberately so. The drive wheels
+# are 0.05 m wide centred at y = +/-0.25, so they reach y = +/-0.275 — 25 mm
+# beyond the chassis sides. A footprint matching the chassis would tell Nav2 the
+# robot is narrower than it is, and the parts sticking out are precisely the
+# ones that would hit the racking. The footprint tracks the widest point of the
+# robot, whatever that happens to be.
 #   aisle clear width    2.80 m  (racking faces at y = +/-1.40)
 #   racking bay pitch    2.70 m, repeating for 30 m
 #   map resolution       0.05 m
@@ -43,12 +51,21 @@ bt_navigator:
     # How long a server has to accept a goal before the BT gives up on it.
     default_server_timeout: 20
 
-    # Custom tree with an explicit, ordered recovery sequence. See
-    # behavior_trees/navigate_w_recovery.xml.
-    default_nav_to_pose_bt_xml: >-
-      $(find-pkg-share amr_navigation)/behavior_trees/navigate_w_recovery.xml
-    default_nav_through_poses_bt_xml: >-
-      $(find-pkg-share amr_navigation)/behavior_trees/navigate_through_poses_w_recovery.xml
+    # NOTE: the behaviour tree paths are deliberately NOT set here.
+    #
+    # A Nav2 params file is plain YAML read by rclcpp; it performs no
+    # substitution. Writing
+    #     default_nav_to_pose_bt_xml: $(find-pkg-share amr_navigation)/...
+    # here — which is the natural thing to try, and which this file did until it
+    # was actually run — passes that string through verbatim. bt_navigator then
+    # fails to configure with the wonderfully unhelpful
+    #     Couldn't open input XML file: $
+    # the lifecycle manager aborts the whole navigation bringup, and every goal
+    # is rejected in under a second with no indication of why.
+    #
+    # navigation.launch.py sets both paths instead, because a launch file *can*
+    # resolve FindPackageShare. tests/test_config_consistency.py asserts this
+    # file contains no unexpanded substitution syntax.
 
     plugin_lib_names:
       - nav2_compute_path_to_pose_action_bt_node
@@ -299,7 +316,7 @@ local_costmap:
       # circumscribed circle around a 0.70 x 0.50 m robot claims 0.18 m of
       # clearance beside the robot that does not exist, and in a 2.8 m aisle
       # that is the difference between a viable plan and none.
-      footprint: "[[0.35, 0.25], [0.35, -0.25], [-0.35, -0.25], [-0.35, 0.25]]"
+      footprint: "[[0.35, 0.275], [0.35, -0.275], [-0.35, -0.275], [-0.35, 0.275]]"
       footprint_padding: 0.02
 
       plugins: [obstacle_layer, inflation_layer]
@@ -414,7 +431,7 @@ global_costmap:
       origin_y: -7.0
       resolution: 0.05
 
-      footprint: "[[0.35, 0.25], [0.35, -0.25], [-0.35, -0.25], [-0.35, 0.25]]"
+      footprint: "[[0.35, 0.275], [0.35, -0.275], [-0.35, -0.275], [-0.35, 0.275]]"
       footprint_padding: 0.02
 
       # False. The warehouse is fully mapped, so unknown space in the global

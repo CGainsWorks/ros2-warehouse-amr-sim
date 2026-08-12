@@ -46,12 +46,21 @@
       <odometry_frame>odom</odometry_frame>
       <robot_base_frame>base_footprint</robot_base_frame>
 
-      <!-- ENCODER, not WORLD. WORLD makes the plugin publish Gazebo's exact
-           pose as odometry, which removes every source of drift and turns the
-           localisation evaluation into a measurement of nothing. ENCODER
-           integrates the wheel joints, so the odometry accumulates error the
-           way real encoders do. -->
-      <odometry_source>1</odometry_source>
+      <!-- 0 = ENCODER, 1 = WORLD. Check the enum before changing this.
+           gazebo_plugins' ROS 2 GazeboRosDiffDrive declares
+               enum OdomSource { ENCODER = 0, WORLD = 1 };
+           This file previously said 1 with a comment claiming it meant ENCODER.
+           It does not: 1 publishes Gazebo's exact pose as odometry, which
+           removes every source of drift and turns the whole localisation
+           evaluation into a measurement of nothing — wheel odometry would have
+           come out perfect and the EKF and AMCL would have had nothing to
+           correct. Nothing warns you; the numbers just come out implausibly
+           good.
+
+           ENCODER integrates the wheel joints, so odometry accumulates error
+           the way real encoders do, including through wheel slip.
+           tests/test_config_consistency.py pins the value to 0. -->
+      <odometry_source>0</odometry_source>
 
       <publish_odom>true</publish_odom>
       <!-- The EKF owns odom -> base_link. If the plugin also published it there

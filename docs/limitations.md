@@ -132,6 +132,15 @@ installs that this stack requires: `gazebo`, `ros-humble-gazebo-ros-pkgs`,
 `ros-humble-xacro`. `scripts/setup.sh` installs all of them; the Docker image
 is the supported path precisely because that list is easy to get wrong.
 
+**The casters are held 3 mm off the floor.** A physical AMR rests on wheels and
+casters together. Here the drive wheels carry the load and the casters only stop
+it pitching, because with both bottoming at exactly z = 0 the contact solver left
+the drive wheels with no normal force at all — the wheels turned at exactly the
+commanded rate and the robot did not move. This is a simulation artefact being
+worked around, not a design choice, and the consequence is that the modelled
+weight distribution is more wheel-biased than a real robot's would be. Traction
+in simulation is therefore slightly optimistic.
+
 **Simulated sensor noise is representative, not characterised.** 1 cm LiDAR
 range noise and the IMU noise densities are typical of the hardware class this
 targets; they are not measured from a specific unit. Numbers from this repository
