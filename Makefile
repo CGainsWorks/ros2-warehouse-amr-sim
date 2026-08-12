@@ -35,8 +35,7 @@ test:  ## Run the unit tests (no ROS required)
 
 .PHONY: lint
 lint:  ## Check formatting and obvious errors
-	$(PYTHON) -m flake8 --max-line-length=110 --extend-ignore=E203,W503 \
-		src/ analysis/ tests/ simulation/ || true
+	$(PYTHON) -m flake8 src/ analysis/ tests/ simulation/
 
 .PHONY: world
 world:  ## Regenerate the Gazebo world, zone definitions and reference map

@@ -159,6 +159,36 @@ class TestDynamics:
         )
 
 
+class TestLintConfiguration:
+    """The lint settings live in .flake8. Anything that passes them again on a
+    command line silently overrides that file."""
+
+    def test_nothing_overrides_the_flake8_config(self):
+        """CI passed --max-line-length=110 over a .flake8 that says 120, so the
+        CI job was failing on 24 pre-existing lines while `make lint` reported
+        success -- it passed the same override *and* ended in `|| true`, so it
+        could not fail at all. The config file's own comment says this cannot
+        happen, which is how it went unnoticed."""
+        for path in (REPO_ROOT / "Makefile",
+                     REPO_ROOT / ".github" / "workflows" / "ci.yml"):
+            for line in path.read_text(encoding="utf-8").splitlines():
+                if line.lstrip().startswith("#"):
+                    continue
+                if "flake8" not in line:
+                    continue
+                for flag in ("--max-line-length", "--extend-ignore", "--ignore"):
+                    assert flag not in line, (
+                        "%s passes %s to flake8, overriding .flake8: %s"
+                        % (path.name, flag, line.strip())
+                    )
+
+    def test_the_lint_target_can_fail(self):
+        """`|| true` on a lint target means it reports success no matter what."""
+        makefile = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
+        lint_body = makefile.split("lint:", 1)[1].split("\n.PHONY", 1)[0]
+        assert "|| true" not in lint_body
+
+
 class TestFaultInjection:
     """The fault harness is the only part of this repository whose job is to
     break the robot, so its own failure modes are quiet ones."""

@@ -31,10 +31,12 @@ jobs:
         run: python -m pip install --upgrade pip numpy scipy pyyaml pytest flake8
 
       - name: Lint
-        run: |
-          flake8 --max-line-length=110 --extend-ignore=E203,W503 \
-            src/ analysis/ tests/ simulation/
-
+        # No flags: the settings live in .flake8, so this job and `make lint`
+        # cannot drift from it. They had drifted -- both passed
+        # --max-line-length=110 over a config file that says 120, so this step
+        # was failing on 24 pre-existing lines while `make lint` reported success,
+        # because it passed the same override and ended in `|| true`.
+        run: flake8 src/ analysis/ tests/ simulation/
       - name: Unit tests
         run: python -m pytest tests/ -q
 

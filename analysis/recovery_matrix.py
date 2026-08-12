@@ -305,7 +305,8 @@ def format_isolated_report(matrix: dict) -> str:
         "another fault has already broken",
         "",
     ]
-    header = "%-20s %-10s %8s  %-26s %s" % ("fault", "mission*", "latency", "recoveries invoked", "AMCL peak / resettled")
+    header = "%-20s %-10s %8s  %-26s %s" % (
+        "fault", "mission*", "latency", "recoveries invoked", "AMCL peak / resettled")
     lines += [header, "-" * len(header)]
 
     for row in matrix["runs"]:
