@@ -4,14 +4,24 @@
 # robot parked hard against a face has to reverse blind to leave, and the pick
 # faces here are worked by a person reaching in, not by the robot itself.
 #
-# Yaw is the heading the robot ends the leg on. Alternating headings at the far
-# waypoints exercise the in-place rotation path and the RotateToGoal critic,
-# which a mission that only ever drives forwards never touches.
+# HEADINGS ARE ALONG THE AISLE, NEVER ACROSS IT.
+#
+# An earlier version asked for yaw = 90 degrees at the east end, "turn across
+# the aisle". The robot reached x = 11.5, clipped the racking at y = 1.46, and
+# once buried in the rack face AMCL had nothing left to match and scattered
+# across the map. The aisle gives 1.125 m of clearance either side of the
+# centreline; demanding a perpendicular heading spends most of it on a
+# manoeuvre that serves no purpose, since this robot picks nothing itself and
+# only ever needs to face along the aisle or reverse down it.
+#
+# 180 degree reversals are kept. They are the real manoeuvre a shuttle makes at
+# an aisle end, and the robot's 0.89 m swept circle fits the 2.8 m aisle with
+# room to spare.
 
 waypoints:
   - {x: -9.45,  y: 0.0, yaw: 0.0}     # abreast of pick_face_*_0
   - {x: -1.35,  y: 0.0, yaw: 0.0}     # abreast of pick_face_*_1
   - {x:  6.75,  y: 0.0, yaw: 0.0}     # abreast of pick_face_*_2
-  - {x: 12.50,  y: 0.0, yaw: 1.5708}  # east end, turn across the aisle
+  - {x: 11.50,  y: 0.0, yaw: 3.1416}  # east end, reverse direction in place
   - {x:  0.00,  y: 0.0, yaw: 3.1416}  # back down the aisle, facing west
   - {x: -13.85, y: 0.0, yaw: 3.1416}  # charger bay

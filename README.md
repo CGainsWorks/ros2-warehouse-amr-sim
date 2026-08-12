@@ -116,25 +116,24 @@ Latency differs, as it should; the slower machine's figures are the ones quoted.
 
 ### End-to-end in Gazebo
 
-The stack builds, launches and drives. Localisation is now good; navigation is
-not yet, and both numbers are published.
-
 **Localisation, measured with the navigation stack out of the loop** — a fixed
-velocity profile, 12.4 m, so the result measures the estimator and not the
-controller:
+velocity profile, so the result measures the estimator and not the controller:
 
 | Source | ATE RMSE | Yaw RMSE | Covariance |
 |---|---|---|---|
 | Wheel odometry | 0.482 m | 24.4° | — |
-| **EKF fused** | **0.157 m** | **3.91°** | **consistent** |
-| AMCL | 1.272 m | 33.9° | overconfident |
+| EKF fused | 0.183 m | 4.63° | consistent |
+| **AMCL** | **0.077 m** | **1.18°** | **consistent** |
 
-The EKF started this session at **6.72 m** and is now the best estimator in the
-stack and the only one whose reported covariance is statistically honest.
+Both filters started this session above 6.6 m. Both are now statistically
+consistent, and AMCL is the best estimator in the stack — which is what it is
+for, since correcting the EKF's drift is its whole job.
 
-**No mission completes.** With localisation fixed in open loop, a Nav2 mission
-still aborts — the residual AMCL error is enough to put the robot where it does
-not think it is, and it collides. The recovery matrix is therefore still empty.
+**The mission still does not complete.** It drives 34.7 m of path and 24 m net,
+from the west end almost to the east end, with AMCL holding a median error of
+0.31 m. It previously managed about 7 m. The robot then drifts laterally until
+it touches the rack face and jams. That is now a **controller** problem, not an
+estimator one, and it is the next thing to look at.
 
 ### The decoupling that made this measurable
 
@@ -147,13 +146,14 @@ successive mission runs. In the open-loop harness, same code, no Nav2, it
 over-reports by **0%**. None of those were sensor faults — the robot was pinned
 against a pallet with its wheels turning.
 
-### Three bugs that only a system test could find
+### Four bugs that only a system test could find
 
 | Bug | Effect |
 |---|---|
 | `gazebo_ros_diff_drive` publishes an **unsigned** wheel twist (`sqrt(dx²+dy²)`) | Every reverse integrated as a forward. EKF ATE 6.72 m → 0.157 m when fixed |
 | IMU `ax` fused with a 0.1 m/s² bias, no bias estimation | Constant acceleration integrated into position |
 | Trimmed ICP discards the racking uprights as outliers | In a corridor of parallel walls those are the only points constraining motion; at `trim_ratio` 0.80 the matcher lost half the motion, at 0.60 all of it |
+| AMCL `z_rand: 0.5` — half the measurement weight uniform | A uniform term awards the same likelihood to every hypothesis however badly it fits, so in a map repeating every 2.7 m the right bay could not be told from the wrong one. AMCL 1.272 m → **0.077 m** |
 
 Full diagnosis, an experiment that made AMCL six times worse, and the
 outstanding work are in

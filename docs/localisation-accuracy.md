@@ -7,20 +7,21 @@ categories have very different evidential weight.
 
 | | Status | Reproduce with |
 |---|---|---|
-| **LiDAR odometry, offline benchmark** | Measured. Good. | `make scan-odometry` |
-| **Scan matcher per-match error** | Measured. Good. | `make test` |
-| **AMCL vs Gazebo ground truth** | Measured. **Not acceptable.** | `make eval` |
-| **EKF vs Gazebo ground truth** | Measured. Within 8% of true distance. | `make eval` |
+| **AMCL vs ground truth, Nav2 out of the loop** | Measured. **0.077 m, consistent.** | `make openloop` |
+| **EKF vs ground truth, Nav2 out of the loop** | Measured. **0.183 m, consistent.** | `make openloop` |
+| **LiDAR odometry, offline benchmark** | Measured. Good — and contradicted in simulation. | `make scan-odometry` |
+| **Scan matcher in simulation** | Measured. Does not track; **disabled by default.** | `make openloop` |
+| **AMCL during a Nav2 mission** | Measured. Median 0.31 m; mission does not complete. | `make eval` |
 | **Recovery matrix** | Not produced — no mission completes. | `make faults` |
 
-The first two need only Python, numpy and scipy, run in seconds on any machine,
-and are exercised by CI on every push. The rest require a Gazebo run.
+The offline benchmarks need only Python, numpy and scipy and are exercised by CI
+on every push. The rest require a Gazebo run.
 
 Read the offline and simulated sections together, because **they disagree**, and
 the disagreement is the most useful thing on this page: the offline benchmark
-says the scan matcher cuts ATE by 82%, while in simulation the same code tracked
-nothing at all. There are no placeholder figures here — where something has not
-been produced, it says so.
+credits the scan matcher with a 63% ATE reduction, and in simulation the same
+code tracks nothing at all. There are no placeholder figures here — where
+something has not been produced, it says so.
 
 ## Metrics, and why three of them
 
@@ -61,17 +62,19 @@ in the stack to cover, so a comparison without it would understate the case.
 
 | Metric | Wheel odometry | LiDAR odometry | Change |
 |---|---|---|---|
-| ATE RMSE | 0.574 m | **0.105 m** | −82% |
-| ATE median | 0.380 m | 0.113 m | |
-| ATE 95th percentile | 0.851 m | 0.136 m | |
-| ATE max | 0.860 m | 0.145 m | |
-| Yaw RMSE | 0.59° | **0.12°** | −80% |
-| Yaw max | 1.24° | 0.63° | |
-| RPE translation RMSE (1 s) | 0.0705 m | **0.0174 m** | −75% |
-| RPE yaw RMSE (1 s) | 0.189° | 0.134° | |
+| ATE RMSE | 0.574 m | **0.215 m** | −63% |
+| ATE 95th percentile | 0.851 m | 0.385 m | |
+| Yaw RMSE | 0.59° | 1.04° | |
+| RPE translation RMSE (1 s) | 0.0705 m | **0.0192 m** | −73% |
 
-Scan matcher health over the same run: 398 matched, 2 rejected (0.5%), per-scan
-latency median 3.81 ms, p95 8.38 ms, max 18.6 ms against a 100 ms budget.
+Scan matcher health over the same run: 397 matched, 3 rejected (0.8%), per-scan
+latency median 3.0 ms, p95 6.0 ms against a 100 ms budget.
+
+These figures are with `trim_ratio` at 0.95. At the original 0.80 the benchmark
+scored better still (0.105 m, −82%) — and that setting made the matcher unusable
+in simulation, for the reason given under the corridor-degeneracy bug below. A
+component benchmark preferring the setting that breaks the system is exactly the
+hazard this page is about.
 
 Note the shape of the wheel-odometry error: its *RPE* is respectable, because
 locally the encoders are good. What ruins it is the systematic scale error and
@@ -98,7 +101,7 @@ the aisle:
 | Translation error, 90th percentile | < 0.06 m |
 | Rotation error, median | < 0.6° |
 | Fitness, 5th percentile | > 0.60 |
-| Trimmed mean residual, max | < 0.030 m |
+| Trimmed mean residual, max | < 0.040 m |
 
 The residual floor of ~0.018 m is set by the **0.5° beam spacing**, not by range
 noise: at 10 m one beam step is 87 mm, so nearest-neighbour distance is dominated
@@ -175,16 +178,66 @@ the resulting ATE measures the estimator alone. Everything below comes from it.
 
 ### Where the chain stands
 
-12.4 m of travel, ~59 s, forward/reverse/in-place rotation/arcs:
+12.4 m of travel, ~59 s, forward/reverse/in-place rotation/arcs, Nav2 out of
+the loop:
 
-| Source | Path vs truth | ATE RMSE | ATE median | Yaw RMSE | NEES |
-|---|---|---|---|---|---|
-| Wheel odometry | −0% | 0.482 m | 0.020 m | 24.4° | — |
-| **EKF fused** | **−1%** | **0.157 m** | **0.012 m** | **3.91°** | **0.02, consistent** |
-| AMCL | +18% | 1.272 m | 1.403 m | 33.9° | 134, overconfident |
+| Source | ATE RMSE | ATE median | Yaw RMSE | NEES |
+|---|---|---|---|---|
+| Wheel odometry | 0.482 m | 0.020 m | 24.4° | — |
+| EKF fused | 0.183 m | 0.012 m | 4.63° | 0.03, consistent |
+| **AMCL** | **0.077 m** | **0.072 m** | **1.18°** | **0.73, consistent** |
 
-The EKF is now the best estimator in the stack and the only one whose reported
-covariance is statistically honest. It started this session at 6.72 m.
+AMCL began this session at 6.65 m and the EKF at 6.72 m. Both are now
+statistically consistent, and AMCL is the best estimator in the stack — which is
+what it is supposed to be, since correcting the EKF's drift is its whole job.
+
+### The fix that mattered most: z_rand
+
+`z_hit: 0.5, z_rand: 0.5` was the single largest defect in the localisation
+stack, and the reasoning that produced it sounded careful. A warehouse LiDAR
+sees a great deal that the static map cannot explain — pallets in the aisle,
+people, a parked forklift — so half the measurement weight was given to the
+uniform random term to tolerate unexplained returns.
+
+That is a misreading of what `z_rand` does. It is **uniform**: it awards the
+same likelihood to every hypothesis, however badly it fits. At 0.5 it puts a
+floor of half the total weight under a pose that explains nothing at all, which
+compresses the gap between a correct hypothesis and a wrong one. In a map whose
+racking repeats every 2.7 m, that gap is the only thing distinguishing the right
+bay from its neighbours.
+
+The failure it produced was precise and repeatable. AMCL tracked x to within
+0.01 m through 20 s of straight running, then at the instant the first in-place
+rotation began it slid laterally from y = 0.00 to y = 1.47 — onto the rack face
+— and stayed there, tracking the rotation rate perfectly from the wrong place.
+Not drift, and not a motion-model error: a single resample onto a hypothesis
+that should never have been competitive.
+
+| | z_rand 0.5 | z_rand 0.1 |
+|---|---|---|
+| ATE RMSE | 1.272 m | **0.077 m** |
+| Yaw RMSE | 33.9° | **1.18°** |
+| NEES | 134, overconfident | **0.73, consistent** |
+
+The unmapped-object concern was real; the remedy was wrong. Subsampling beams
+and letting the obstacle layer carry unmapped geometry handles it without
+blunting the filter's ability to tell two poses apart.
+
+### Two hypotheses that were wrong, and cost a run each
+
+Recorded because the negative results are part of the evidence.
+
+**Wide motion noise.** The rotation failure looked like a proposal distribution
+too narrow for the laser to correct, so `alpha1`/`alpha2` went to 0.20,
+`max_beams` to 240 and gentle recovery injection back on. ATE went from 1.32 m
+to **12.47 m**. Three parameters at once, so the result only establishes that
+the combination is worse — poor experimental hygiene, and the reason every
+subsequent change was made one at a time.
+
+**Particle depletion.** Holding the count fixed at 2000 instead of 500-2000
+adaptive, on the theory that KLD shrinkage was discarding the correct
+hypothesis. Measured 1.56 m against the 1.27 m baseline: no better, at four
+times the CPU. Reverted.
 
 ### Three bugs the harness found
 
@@ -238,21 +291,35 @@ Three parameters were changed at once, so the result only establishes that the
 combination is worse, not which one did the damage. That is a methodological
 failure worth naming rather than hiding.
 
-### Outstanding
+### Outstanding — and it is no longer localisation
 
-1. **AMCL's rotation failure is unresolved.** It is the weakest link in the
-   chain and the only estimator worse than its own input. Next step is to change
-   one parameter at a time against the open-loop harness, which now gives a
-   stable number to compare against.
-2. **The scan matcher does not track in the simulated corridor** (net 0.1 m over
-   11.5 m) despite working on the offline benchmark. It is now **disabled by
-   default**: with it fused the EKF loses 32% of the motion and scores 3.26 m,
-   without it 0.157 m. Shipping a component that measurably degrades the
-   estimate would be wrong; the switch remains for when it is fixed.
-3. **No mission completes.** With localisation fixed in open loop, a Nav2
-   mission still aborts: wheel odometry over-reports 108% in the mission and 0%
-   in open loop, which means the robot is still colliding. The residual AMCL
-   error is enough to put it where it does not think it is.
+With localisation fixed, a Nav2 mission drives 34.7 m of path and 24 m net,
+from the west end almost to the east end of the aisle. It previously managed
+about 7 m. AMCL's median error across that run is 0.307 m.
+
+It still does not complete. The robot drifts laterally until it touches the rack
+face at y = 1.43 near x = 11.9, jams, and once buried in the racking AMCL has
+nothing left to match and scatters — which is what pulls the run's ATE RMSE to
+2.59 m against a median of 0.31 m.
+
+That is a **controller** problem, not an estimator one. The aisle gives 1.125 m
+of clearance either side of the centreline and ground truth shows the robot
+using all of it, so DWB is not holding the line the planner gives it. The next
+things to look at, in order:
+
+1. Whether the global path is on the centreline or already hugging one side —
+   `nav2_navfn_planner` is not footprint-aware and the inflation gradient is
+   what centres it.
+2. `PathDist`/`PathAlign` weights, which are already raised to 44/40 but were
+   tuned by reasoning rather than measurement.
+3. Whether the lateral excursion coincides with the in-place 180 degree
+   reversal at the east end, in which case it is the turn and not the straight
+   running.
+
+One mission-design error was fixed along the way: a waypoint asked for a 90
+degree heading across the aisle at the east end, which spends most of the
+available clearance on a manoeuvre this robot never needs — it picks nothing
+itself and only ever faces along the aisle or reverses down it.
 
 ### Why the offline benchmark did not catch any of this
 

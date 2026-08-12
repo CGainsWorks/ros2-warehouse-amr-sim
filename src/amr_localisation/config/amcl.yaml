@@ -63,14 +63,32 @@ amcl:
     # -----------------------------------------------------------------
     laser_model_type: "likelihood_field"
 
-    # z_hit + z_rand = 1.0. 0.5/0.5 is a deliberately conservative split for a
-    # warehouse: half the weight allows for a return that the static map cannot
-    # explain, because a large fraction of what the LiDAR sees — pallets in the
-    # aisle, people, a parked forklift — genuinely is not in the map. Pushing
-    # z_hit towards 0.9, which is common for tidy corridors, makes the filter
-    # over-penalise particles for observing real but unmapped objects.
-    z_hit: 0.5
-    z_rand: 0.5
+    # z_hit + z_rand = 1.0.
+    #
+    # This was 0.5/0.5, reasoned from the fact that a lot of what the LiDAR sees
+    # in a warehouse — pallets in the aisle, people, a parked forklift — is
+    # genuinely not in the map, so half the weight should tolerate unexplained
+    # returns. That reasoning is defensible in isolation and was wrong in
+    # context.
+    #
+    # z_rand is a UNIFORM term: it awards the same likelihood to every
+    # hypothesis regardless of how badly it fits. At 0.5 it puts a floor of half
+    # the total weight under a pose that explains nothing at all, which
+    # compresses the difference between a correct hypothesis and a wrong one to
+    # the point where a repetitive map cannot be disambiguated. In a corridor
+    # whose racking repeats every 2.7 m, that is fatal.
+    #
+    # The failure it produced, measured in the open-loop harness: AMCL tracked x
+    # to within 0.01 m through 20 s of straight running, then during the first
+    # in-place rotation slid laterally from y = 0.00 to y = 1.47 — onto the rack
+    # face — and stayed there, tracking the rotation rate perfectly from the
+    # wrong place.
+    #
+    # 0.9/0.1 restores the discrimination. The unmapped-object concern is real
+    # but is better handled by max_beams subsampling and by the obstacle layer,
+    # neither of which blunts the filter's ability to tell two poses apart.
+    z_hit: 0.9
+    z_rand: 0.1
     # Unused by likelihood_field but read at startup; left at library defaults.
     z_max: 0.05
     z_short: 0.05
@@ -106,10 +124,10 @@ amcl:
     # -----------------------------------------------------------------
     # Particle filter.
     # -----------------------------------------------------------------
-    # 500-2000 adaptive. The lower bound is what is needed to track a converged
-    # pose in a 30 x 12 m space; the upper bound is what global localisation
-    # needs when the initial pose is unknown, and is where the filter sits for
-    # the first few seconds after a relocalisation request.
+    # 500-2000 adaptive. Holding it fixed at 2000 was tried against the
+    # open-loop harness on the theory that KLD shrinkage was discarding the
+    # correct hypothesis; it measured 1.56 m against the 1.27 m baseline, i.e.
+    # no better, at four times the CPU. Reverted.
     min_particles: 500
     max_particles: 2000
 
@@ -118,10 +136,11 @@ amcl:
     pf_err: 0.05
     pf_z: 0.99
 
-    # Resample every filter update. The alternative, resampling less often,
-    # reduces particle depletion but this filter already has recovery_alpha
-    # injection for that, and the aisle is repetitive enough that delayed
-    # resampling lets wrong hypotheses persist.
+    # Resample every filter update. Resampling less often reduces particle
+    # depletion, which is the other lever on the mode-loss failure described
+    # above; it is left at 1 for now so that min_particles is the only thing
+    # changed in this experiment. If holding the count at 2000 is not enough,
+    # this is the next single variable to try.
     resample_interval: 1
 
     # Update only after real motion. 0.2 m / 0.2 rad. Updating on a stationary
