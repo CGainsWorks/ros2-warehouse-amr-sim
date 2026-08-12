@@ -16,7 +16,7 @@ from launch.actions import (
 )
 from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, PythonExpression
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 
@@ -38,7 +38,15 @@ def generate_launch_description() -> LaunchDescription:
                 [FindPackageShare("amr_description"), "launch", "description.launch.py"]
             )
         ),
-        launch_arguments={"use_sim_time": use_sim_time}.items(),
+        launch_arguments={
+            "use_sim_time": use_sim_time,
+            # With the relay enabled the LiDAR publishes to scan_raw and
+            # amr_bringup's scan_relay forwards it to scan. Off by default, so
+            # a normal run has nothing between the sensor and the stack.
+            "scan_topic": PythonExpression(
+                ["'scan_raw' if '", LaunchConfiguration("use_scan_relay"), "' == 'true' else 'scan'"]
+            ),
+        }.items(),
     )
 
     localisation = IncludeLaunchDescription(
@@ -86,11 +94,32 @@ def generate_launch_description() -> LaunchDescription:
                     "loop that makes a mission run circular."
                 ),
             ),
+            DeclareLaunchArgument(
+                "use_scan_relay",
+                default_value="false",
+                description=(
+                    "Interpose amr_bringup's scan_relay between the LiDAR and the "
+                    "stack so a sensor dropout can be induced. Only run_faults.sh "
+                    "sets this; every other run is wired sensor-to-stack directly."
+                ),
+            ),
             DeclareLaunchArgument("use_rviz", default_value="false"),
             DeclareLaunchArgument("x", default_value="-12.0"),
             DeclareLaunchArgument("y", default_value="0.0"),
             DeclareLaunchArgument("yaw", default_value="0.0"),
 
+            Node(
+                package="amr_bringup",
+                executable="scan_relay",
+                name="scan_relay",
+                output="screen",
+                condition=IfCondition(LaunchConfiguration("use_scan_relay")),
+                parameters=[{
+                    "use_sim_time": use_sim_time,
+                    "input_topic": "scan_raw",
+                    "output_topic": "scan",
+                }],
+            ),
             ExecuteProcess(
                 cmd=["gzserver", "--verbose", "-s", "libgazebo_ros_init.so",
                      "-s", "libgazebo_ros_factory.so", world],

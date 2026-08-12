@@ -291,35 +291,86 @@ Three parameters were changed at once, so the result only establishes that the
 combination is worse, not which one did the damage. That is a methodological
 failure worth naming rather than hiding.
 
-### Outstanding — and it is no longer localisation
+### Resolved: it was never the controller either
 
-With localisation fixed, a Nav2 mission drives 34.7 m of path and 24 m net,
-from the west end almost to the east end of the aisle. It previously managed
-about 7 m. AMCL's median error across that run is 0.307 m.
+The section that used to sit here blamed DWB, on the evidence that ground truth
+showed the robot using all 1.125 m of its lateral clearance and therefore "not
+holding the line the planner gives it". Three of the four things it proposed
+looking at were wrong, and the fourth was wrong about which obstacle mattered.
+Recording that is more useful than quietly deleting it.
 
-It still does not complete. The robot drifts laterally until it touches the rack
-face at y = 1.43 near x = 11.9, jams, and once buried in the racking AMCL has
-nothing left to match and scatters — which is what pulls the run's ATE RMSE to
-2.59 m against a median of 0.31 m.
+What the next run actually showed:
 
-That is a **controller** problem, not an estimator one. The aisle gives 1.125 m
-of clearance either side of the centreline and ground truth shows the robot
-using all of it, so DWB is not holding the line the planner gives it. The next
-things to look at, in order:
+* **DWB tracks a straight line to 0.16 m over 19 m.** It was never the problem.
+* Raising `PathDist`/`PathAlign` to 44/40 — reasoned, not measured — made the
+  return to centreline *underdamped*. Restoring 32/32 changed nothing either
+  way. Both are recorded in [parameter-rationale.md](parameter-rationale.md).
+* The lateral excursion did **not** coincide with the reversal.
+* The binding obstacle was not the aisle pallet at (4.0, 0.35), which is offset,
+  leaves 1.45 m on its south side, and was passed without hesitation every run.
 
-1. Whether the global path is on the centreline or already hugging one side —
-   `nav2_navfn_planner` is not footprint-aware and the inflation gradient is
-   what centres it.
-2. `PathDist`/`PathAlign` weights, which are already raised to 44/40 but were
-   tuned by reasoning rather than measurement.
-3. Whether the lateral excursion coincides with the in-place 180 degree
-   reversal at the east end, in which case it is the turn and not the straight
-   running.
+The real cause was `inflation_radius: 0.65` against a person standing at
+(8.0, 0.0), dead centre of the aisle. Inflated from the obstacle and from the
+racking, the two bands overlapped by 0.15 m and **closed the aisle completely**.
+The full derivation is in [parameter-rationale.md](parameter-rationale.md); the
+value is now 0.47, pinned inside a 5 cm window between the circumscribed radius
+and aisle closure.
 
-One mission-design error was fixed along the way: a waypoint asked for a 90
-degree heading across the aisle at the east end, which spends most of the
-available clearance on a manoeuvre this robot never needs — it picks nothing
-itself and only ever faces along the aisle or reverses down it.
+#### The stall, and why the aggregate ATE lied
+
+The measurement that made this legible was AMCL error *as a function of time*
+rather than aggregated over the run:
+
+| | AMCL ATE |
+|---|---|
+| First 53 s, before the stall | **0.058 m** RMSE, 0.101 m max |
+| Whole run | 0.476 m RMSE |
+
+Those are the same filter on the same run. The robot drove to within 8 cm of the
+person, and DWB — which hard-rejects any trajectory whose centre enters the
+inscribed band — had no forward trajectory left to choose, so it sat rotating on
+the spot for 21 s. The wheels turned. The body did not move. Odometry reported
+0.79 m that never happened, and in a corridor whose racking repeats every 2.7 m
+the laser likelihood is nearly flat along the aisle, so the scan could not
+contradict it. AMCL recovered to 0.05 m within seconds of the robot moving
+again.
+
+**The aggregate said "localisation failure". The time series said "one 0.8 m
+excursion inside an otherwise 0.058 m track, and something trapped the robot".**
+Only the second is actionable. This is the third time in this work that an
+aggregate metric pointed at the wrong subsystem — the others were odometry
+scored in the wrong frame, and clustering scored against the wrong ground truth.
+
+### Measured: the complete mission
+
+Six waypoints, 56 m of path, Nav2 in the loop, `inflation_radius: 0.47`:
+
+| Source | ATE RMSE | max | Yaw RMSE | Path vs truth | NEES |
+|---|---|---|---|---|---|
+| Wheel odometry | 2.788 m | 7.243 m | 2.01° | +0% | — |
+| EKF fused | 0.320 m | 0.800 m | 0.33° | +0% | consistent |
+| **AMCL** | **0.119 m** | **0.226 m** | **0.79°** | +1% | 2.05, consistent |
+
+Three things in that table are worth more than the headline number.
+
+**Zero discontinuities above 0.5 m.** Bay aliasing is the defining hazard of
+this environment and the one a 2.7 m periodic map is built to expose. Across
+56 m of driving, AMCL never jumped a bay. That is the result the `z_hit`/`z_rand`
+work was actually for.
+
+**Wheel odometry's path length is within 0% of truth.** No slip anywhere. Every
+earlier mission over-reported — 276%, 169%, 56%, 36% — and every one of those
+was the robot pinned against something with its wheels turning, not a sensor
+fault. It is a good proxy for "did the robot ever get stuck", and it is cheap.
+
+**Wheel ATE of 2.788 m is correct behaviour, not a regression.** Dead reckoning
+with a 5% scale error over 56 m does that. Correcting it is AMCL's entire job,
+and the 23× gap between them is the stack working.
+
+The EKF's NEES reads 0.00, which the script's verdict logic reports as
+"consistent". It is not inconsistent, but it is over-conservative rather than
+well-calibrated, and the verdict wording does not currently distinguish the two.
+That is noted in [limitations.md](limitations.md).
 
 ### Why the offline benchmark did not catch any of this
 

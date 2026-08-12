@@ -41,7 +41,9 @@ SIM_PID=$!
 
 echo "--- waiting for localisation (up to ${TIMEOUT_STARTUP}s)"
 deadline=$((SECONDS + TIMEOUT_STARTUP))
-until ros2 topic echo /amcl_pose --once > /dev/null 2>&1; do
+# timeout, so the deadline below is reachable: `ros2 topic echo --once` blocks
+# forever on a topic that never appears.
+until timeout 5 ros2 topic echo /amcl_pose --once > /dev/null 2>&1; do
   if (( SECONDS > deadline )); then
     echo "ERROR: /amcl_pose never appeared." >&2
     tail -n 30 "${RESULTS}/simulation.log" >&2

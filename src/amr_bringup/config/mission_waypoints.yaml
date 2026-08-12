@@ -4,24 +4,29 @@
 # robot parked hard against a face has to reverse blind to leave, and the pick
 # faces here are worked by a person reaching in, not by the robot itself.
 #
-# HEADINGS ARE ALONG THE AISLE, NEVER ACROSS IT.
+# A WAYPOINT'S HEADING MUST BE THE HEADING THE ROBOT ARRIVES ON.
 #
-# An earlier version asked for yaw = 90 degrees at the east end, "turn across
-# the aisle". The robot reached x = 11.5, clipped the racking at y = 1.46, and
-# once buried in the rack face AMCL had nothing left to match and scattered
-# across the map. The aisle gives 1.125 m of clearance either side of the
-# centreline; demanding a perpendicular heading spends most of it on a
-# manoeuvre that serves no purpose, since this robot picks nothing itself and
-# only ever needs to face along the aisle or reverse down it.
+# This is the rule two earlier versions broke, and it is not a cosmetic one.
+# DWB's path critics reward aligning with the planned path, so a waypoint whose
+# orientation differs from the approach direction makes the robot rotate *while
+# it is still translating*. In a 2.8 m aisle that sweeps a 0.70 m body sideways
+# into the racking.
 #
-# 180 degree reversals are kept. They are the real manoeuvre a shuttle makes at
-# an aisle end, and the robot's 0.89 m swept circle fits the 2.8 m aisle with
-# room to spare.
+# Measured: the robot held the centreline to within 0.16 m for 19 m, then on the
+# leg toward a waypoint asking for yaw = pi it began turning at x = 10.2, was at
+# 113 degrees and y = 0.83 by t = 40 s, and wedged against the rack face at
+# y = 1.24 facing across the aisle. No recovery had fired at that point — this
+# was ordinary controller behaviour doing exactly what the goal asked for.
+#
+# So every eastbound waypoint faces east, and every westbound one faces west.
+# The single direction reversal happens between waypoints 4 and 5, where the
+# robot is stationary at the aisle end and DWB executes it as an in-place
+# rotation with no translation demanded of it at the same time.
 
 waypoints:
-  - {x: -9.45,  y: 0.0, yaw: 0.0}     # abreast of pick_face_*_0
-  - {x: -1.35,  y: 0.0, yaw: 0.0}     # abreast of pick_face_*_1
-  - {x:  6.75,  y: 0.0, yaw: 0.0}     # abreast of pick_face_*_2
-  - {x: 11.50,  y: 0.0, yaw: 3.1416}  # east end, reverse direction in place
-  - {x:  0.00,  y: 0.0, yaw: 3.1416}  # back down the aisle, facing west
-  - {x: -13.85, y: 0.0, yaw: 3.1416}  # charger bay
+  - {x: -9.45,  y: 0.0, yaw: 0.0}     # eastbound, abreast of pick_face_*_0
+  - {x: -1.35,  y: 0.0, yaw: 0.0}     # eastbound, abreast of pick_face_*_1
+  - {x:  6.75,  y: 0.0, yaw: 0.0}     # eastbound, abreast of pick_face_*_2
+  - {x: 11.50,  y: 0.0, yaw: 0.0}     # east end, still facing east
+  - {x:  0.00,  y: 0.0, yaw: 3.1416}  # westbound: the reversal happens here
+  - {x: -13.85, y: 0.0, yaw: 3.1416}  # charger bay, facing west

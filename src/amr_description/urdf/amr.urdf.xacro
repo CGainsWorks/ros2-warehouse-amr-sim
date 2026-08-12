@@ -16,6 +16,12 @@
 <robot name="warehouse_amr" xmlns:xacro="http://www.ros.org/wiki/xacro">
 
   <xacro:arg name="use_gazebo" default="true"/>
+  <!-- Where the 2D LiDAR publishes. Normally "scan", straight to the stack.
+       The fault-injection run sets this to "scan_raw" and interposes
+       amr_bringup's scan_relay, which can be told to go quiet to simulate a
+       sensor dropout. Keeping it a parameter means every other run is wired
+       exactly as it was measured, with no relay in the path. -->
+  <xacro:arg name="scan_topic" default="scan"/>
 
   <!-- Body: 0.70 x 0.50 x 0.28 m chassis, 65 kg laden. -->
   <xacro:property name="base_length" value="0.70"/>

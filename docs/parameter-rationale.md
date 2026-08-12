@@ -31,14 +31,19 @@ Two facts drive almost everything: the aisle is narrow relative to the robot
 
 ## Costmaps
 
-### `inflation_radius: 0.65` (both costmaps)
+### `inflation_radius` (both costmaps)
 
-= circumscribed radius (0.445) + 0.205 m margin.
+Set to 0.47 m. The derivation is below; the short version is that it is pinned
+inside a 5 cm window by the robot's own geometry and by a person standing in the
+aisle.
 
 Worked through for this aisle: racking faces sit at |y| = 1.40, so the inflated
-bands reach |y| = 0.75 and leave a **1.50 m zero-cost corridor** down the middle.
-The robot is 0.55 m wide, so it can sit entirely in zero-cost cells with 0.475 m
-clear either side.
+bands reach |y| = 0.93 and leave a **1.86 m zero-cost corridor** down the middle
+of an empty aisle. The robot is 0.55 m wide, so it can sit entirely in zero-cost
+cells with 0.655 m clear either side.
+
+An empty aisle is not the case that binds, though, and sizing the radius against
+it is what produced the failure described two sections down.
 
 Push the radius to 0.9 m and that corridor closes completely. Every plan then
 runs through non-zero cost, at which point the cost gradient stops meaning
@@ -48,11 +53,85 @@ relative ordering carries no information about which side of the aisle to prefer
 Below the circumscribed radius (0.43 m) the robot's own corners can reach cells
 the inflation says are safe.
 
-### `cost_scaling_factor: 3.0`
+### `inflation_radius: 0.47` — a 5 cm feasible window
 
-Cost decays as `253 · exp(−k · (d − r_inscribed))`. At k = 3.0 the residual cost
-at the inflation boundary is `253 · exp(−3.0 · 0.375) = 82`, so there is a step
-from 82 to 0 at 0.65 m.
+This value is squeezed between two hard bounds, and it is the number that
+decided whether the mission could complete at all.
+
+**Lower bound — the circumscribed radius, 0.445 m.** Below this the robot's own
+corners reach cells the inflation calls safe.
+
+**Upper bound — aisle closure, 0.498 m.** A person stands at (8.0, 0.0), dead
+centre of the aisle, and is 0.5 m across. Inflate them by `r` and the racking by
+`r` and the zero-cost lane on each side is
+
+```
+lane = (aisle_half_width - person_half_width) - 2r  =  1.15 - 2r
+```
+
+The lane has to be wide enough that position uncertainty does not push the robot
+out of it. Localisation measures 0.077 m RMSE (open loop, against ground truth),
+so requiring `lane >= 2 x RMSE = 0.154 m` gives `r < 0.498`.
+
+That leaves the interval **[0.445, 0.498]**, and 0.47 is its midpoint. The lane
+is then 0.21 m wide. `tests/test_config_consistency.py` asserts both bounds and
+reads the obstacle positions from the world generator, so moving the person
+re-derives the limit rather than silently invalidating it.
+
+#### What 0.65 did
+
+The previous value was 0.65, derived for an *empty* aisle, where it leaves a
+comfortable 1.50 m corridor. With a person in the middle of that aisle:
+
+```
+lane = 1.15 - 1.30 = -0.15 m
+```
+
+The aisle was **closed by 15 cm**. Not tight — closed. Every route past x = 8
+ran through non-zero cost, so the cost gradient carried no information about
+which side to pass, and NavFn ended the run reporting
+`GridBased failed to create plan with tolerance 0.50`.
+
+The measured failure matched the arithmetic exactly. The robot drove up to
+x = 7.32 — its front bumper 8 cm from the person — and sat there for **21
+seconds**, rotating on the spot, because DWB hard-rejects any trajectory whose
+centre enters the inscribed band and every forward trajectory did. It eventually
+found its way through the north gap by chance, arrived at the far end with no
+lateral room left, touched the rack face at y = 1.17, and aborted.
+
+Two things are worth taking from that. The first is that the binding constraint
+was never the aisle pallet at (4.0, 0.35): that one is offset, leaves 1.45 m on
+its south side, and the robot passed it without hesitating. It was the obstacle
+in the *centre* of the aisle, which is the one case where inflation from both
+sides meets in the middle. The second is that the 21-second stall did real
+damage to the estimator — see below.
+
+#### The stall corrupted localisation, and that is not AMCL's fault
+
+AMCL held **0.058 m RMSE, 0.101 m worst case** for the first 53 seconds of that
+mission. Then the robot stalled against the person with its wheels still
+turning, and over the next 12 seconds AMCL's estimate slid 0.79 m forward while
+the robot did not move at all.
+
+The wheels were slipping, odometry reported motion that had not happened, and in
+a corridor whose racking repeats every 2.7 m the laser likelihood is nearly flat
+along the aisle — so the scan could not contradict it. AMCL recovered to 0.05 m
+within seconds of the robot moving again.
+
+This is worth stating because the whole-mission ATE for that run is 0.476 m,
+which looks like a localisation failure and is not one. It is one 0.8 m
+excursion, caused by a costmap that had trapped the robot, inside an otherwise
+0.058 m track. Reporting the aggregate alone would have sent the next day's work
+to entirely the wrong place.
+
+### `cost_scaling_factor: 5.8`
+
+
+Cost decays as `253 · exp(−k · (d − r_inscribed))`. This value is **not chosen
+independently** — it follows from the inflation radius. Holding the residual cost
+at the inflation boundary fixed at 82 while the radius moved from 0.65 to 0.47
+gives `k = ln(253/82) / (0.47 − 0.275) = 5.8`, so the step from 82 to 0 at the
+boundary is exactly what it was before and the trade below is unchanged.
 
 That discontinuity is a known property of Nav2's inflation layer and is
 **accepted here rather than eliminated**. Removing it would need k ≈ 8, which
@@ -72,7 +151,7 @@ replanning and recovery with nothing obviously wrong in either log.
 ### `footprint` as a polygon, not `robot_radius`
 
 A 0.445 m circumscribed circle around a 0.70 × 0.55 m robot claims 0.17 m of
-clearance beside the robot that does not exist. In a 2.8 m aisle with 0.65 m
+clearance beside the robot that does not exist. In a 2.8 m aisle with 0.47 m
 inflation, that is the difference between a viable plan and none.
 
 ### The footprint is wider than the chassis, on purpose
@@ -90,7 +169,7 @@ footprint tracks the widest point of the robot, whatever that happens to be;
 
 ### Local costmap `6 × 6 m`
 
-Must exceed twice the DWB rollout distance (1.36 m) plus the inflation radius,
+Must exceed twice the DWB rollout distance (0.77 m) plus the inflation radius,
 or trajectories run off the edge and get scored against unknown space. 6 m gives
 3 m in every direction and spans the full aisle width plus both rack faces.
 
@@ -166,14 +245,15 @@ pattern reappears.
 
 ### `sim_time: 1.7`
 
-1.7 s at 0.80 m/s is a **1.36 m rollout**. This is the most consequential DWB
+1.7 s at 0.45 m/s is a **0.77 m rollout**. This is the most consequential DWB
 parameter in a narrow aisle and it is a genuine trade:
 
-* **Longer** (2.5 s, 2.0 m): the robot sees the far side of a gap and commits
-  earlier — but every trajectory that clips an obstacle anywhere in 2 m is
-  scored down, so it becomes reluctant to enter a 1.2 m gap between a pallet and
-  the racking at all.
-* **Shorter** (1.0 s, 0.8 m): squeezes through gaps happily, but does not see
+* **Longer** (2.5 s, 1.1 m): the robot sees the far side of a gap and commits
+  earlier — but every trajectory that clips an obstacle anywhere in 1.1 m is
+  scored down, so it becomes reluctant to enter the 0.21 m lane past a person at
+  all. The rollout must be shorter than the gap it is threading, or the
+  controller is committing to distance it cannot see the end of.
+* **Shorter** (1.0 s, 0.45 m): squeezes through gaps happily, but does not see
   far enough ahead to start decelerating for the aisle end, so it arrives at the
   turn too fast and overshoots.
 
@@ -209,11 +289,25 @@ preference".
 
 | Critic | Value | Default | Why |
 |---|---|---|---|
-| `PathDist` | 44.0 | 32.0 | In a 2.8 m aisle the centreline path is very nearly the only safe route. Letting the controller wander off it to shave a corner puts the robot in the inflation band beside the racking. |
-| `PathAlign` | 40.0 | 32.0 | A differential base that drifts in heading in a corridor ends up crabbing towards a rack face. |
+| `PathDist` | 32.0 | 32.0 | Default, **restored after the raised value was measured**. See below. |
+| `PathAlign` | 32.0 | 32.0 | Default, restored for the same reason. |
 | `GoalDist` | 24.0 | 24.0 | Default. Raising it relative to the path critics makes the robot cut across the aisle towards the goal instead of following the corridor. |
 | `GoalAlign` | 24.0 | 24.0 | Default, same reason. |
 | `BaseObstacle` | 0.02 | 0.02 | Looks tiny and is not: this critic returns raw costmap cost, which runs to 253, while the path critics return distances in cells. At 0.02 an inflated cell near the inscribed radius contributes about 5 points — comparable to being one cell off the path, which is the intended balance. |
+
+#### The path gains were raised by argument and lowered by measurement
+
+They were 44 and 40, reasoned from "in a 2.8 m aisle the centreline is very
+nearly the only safe route, so track it hard". That produced an underdamped
+controller: after the legitimate excursion around the aisle pallet the robot
+overshot the return to the centreline, reaching y = +0.98 with nothing on that
+side to avoid, and stopped in the rack inflation.
+
+A path-following gain is a gain. Raising it does not make the robot more
+obedient, it makes each correction more violent relative to the distance the
+controller has already committed to, and the result oscillates. Restoring the
+defaults did not fix the overshoot either, which is what pointed at speed rather
+than gain as the real constraint.
 
 `PathAlign.forward_point_distance: 0.325` is just under half the robot length,
 which keeps the alignment critic from reacting to path curvature the robot is

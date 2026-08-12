@@ -47,6 +47,7 @@ setup(
             "mission_runner = amr_bringup.nodes.mission_runner:main",
             "fault_injector = amr_bringup.nodes.fault_injector:main",
             "openloop_driver = amr_bringup.nodes.openloop_driver:main",
+            "scan_relay = amr_bringup.nodes.scan_relay:main",
         ],
     },
 )

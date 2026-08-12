@@ -111,7 +111,7 @@
       <plugin name="lidar_2d_controller" filename="libgazebo_ros_ray_sensor.so">
         <ros>
           <namespace>/</namespace>
-          <remapping>~/out:=scan</remapping>
+          <remapping>~/out:=$(arg scan_topic)</remapping>
         </ros>
         <output_type>sensor_msgs/LaserScan</output_type>
         <frame_name>lidar_2d_link</frame_name>

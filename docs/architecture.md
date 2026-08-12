@@ -133,7 +133,7 @@ This is a hard rule, not a stylistic preference, and it is what makes the rest o
 the repository possible:
 
 * The whole segmentation and scan-matching stack is unit tested on a laptop with
-  numpy and scipy and nothing else — 171 tests in under four seconds.
+  numpy and scipy and nothing else — 197 tests in under four seconds.
 * CI runs the real algorithms rather than a mock of them.
 * `analysis/scan_odometry_benchmark.py` measures the *shipped* `ScanOdometry`
   class, not a reimplementation of it. A benchmark that reimplements what it

@@ -31,6 +31,7 @@ AMCL_PARAMS = SRC / "amr_localisation" / "config" / "amcl.yaml"
 URDF = SRC / "amr_description" / "urdf" / "amr.urdf.xacro"
 GAZEBO_XACRO = SRC / "amr_description" / "urdf" / "amr.gazebo.xacro"
 ZONES = REPO_ROOT / "simulation" / "zones" / "warehouse_zones.yaml"
+WAYPOINTS = SRC / "amr_bringup" / "config" / "mission_waypoints.yaml"
 MAP_YAML = REPO_ROOT / "simulation" / "maps" / "warehouse.yaml"
 
 
@@ -158,6 +159,92 @@ class TestDynamics:
         )
 
 
+class TestFaultInjection:
+    """The fault harness is the only part of this repository whose job is to
+    break the robot, so its own failure modes are quiet ones."""
+
+    def test_every_scheduled_fault_has_an_implementation(self):
+        """An unknown fault type is logged and skipped at runtime, so a typo in
+        the schedule reads as "the robot handled it" in the matrix."""
+        schedule = _load_yaml(SRC / "amr_bringup" / "config" / "fault_schedule.yaml")
+        source = (SRC / "amr_bringup" / "amr_bringup" / "nodes"
+                  / "fault_injector.py").read_text(encoding="utf-8")
+
+        for fault in schedule["faults"]:
+            kind = fault["type"]
+            assert '"%s"' % kind in source, (
+                "fault_schedule.yaml schedules %r, which fault_injector.py does "
+                "not implement. At runtime that is logged and skipped, so the "
+                "recovery matrix would show a fault that never fired." % kind
+            )
+
+    def test_faults_are_ordered_and_leave_room_to_recover(self):
+        """Two faults inside one recovery cycle cannot be told apart in the
+        matrix — whichever recovery fires gets attributed to the later one."""
+        schedule = _load_yaml(SRC / "amr_bringup" / "config" / "fault_schedule.yaml")
+        times = [float(f["at"]) for f in schedule["faults"]]
+        assert times == sorted(times), "faults must be in time order"
+        for earlier, later in zip(times, times[1:]):
+            assert later - earlier >= 15.0, (
+                "faults at %.0fs and %.0fs are closer than one recovery cycle"
+                % (earlier, later)
+            )
+
+    def test_the_dropout_relay_is_not_in_the_path_by_default(self):
+        """The localisation figures in the docs were measured with the LiDAR
+        wired straight to the stack. If the relay defaulted on, every run would
+        carry a Python hop in front of AMCL and the numbers would not be
+        comparable."""
+        launch = (SRC / "amr_bringup" / "launch"
+                  / "simulation.launch.py").read_text(encoding="utf-8")
+        declaration = re.search(
+            r'DeclareLaunchArgument\(\s*"use_scan_relay",\s*default_value="(\w+)"',
+            launch,
+        )
+        assert declaration is not None, "use_scan_relay is not declared"
+        assert declaration.group(1) == "false"
+
+        urdf = (SRC / "amr_description" / "urdf"
+                / "amr.urdf.xacro").read_text(encoding="utf-8")
+        assert '<xacro:arg name="scan_topic" default="scan"/>' in urdf
+
+    def test_each_fault_is_measured_in_its_own_run(self):
+        """Firing the whole schedule into one mission produces numbers that
+        cannot be read: a fault that ends the run hides everything after it, and
+        a fault that lands on an already-broken robot has its recovery latency
+        confounded with the previous fault still unwinding. Both happened."""
+        script = (REPO_ROOT / "scripts" / "run_faults.sh").read_text(encoding="utf-8")
+        assert "--runs" in script, "the matrix must be built from per-fault runs"
+        assert 'for index in "${!FAULT_TYPES[@]}"' in script
+
+    def test_the_readiness_check_can_time_out(self):
+        """`ros2 topic echo --once` blocks forever on a topic that never
+        appears, so an unwrapped call makes the startup deadline below it
+        unreachable. The harness sat in that state for eighteen minutes."""
+        for name in ("run_faults.sh", "run_evaluation.sh", "run_openloop.sh"):
+            script_path = REPO_ROOT / "scripts" / name
+            if not script_path.exists():
+                continue
+            script = script_path.read_text(encoding="utf-8")
+            for line in script.splitlines():
+                if line.lstrip().startswith("#"):
+                    continue
+                if "ros2 topic echo" in line and "--once" in line:
+                    assert "timeout " in line, (
+                        "%s waits on `ros2 topic echo --once` without a timeout, "
+                        "so its startup deadline can never fire: %s"
+                        % (name, line.strip())
+                    )
+
+    def test_the_dropout_is_not_implemented_by_stopping_the_simulator(self):
+        """It was, once. Suspending gzserver stops the clock, and under
+        use_sim_time every node in the stack stops with it, so nothing observes
+        a dropout at all."""
+        script = (REPO_ROOT / "scripts" / "run_faults.sh").read_text(encoding="utf-8")
+        assert "pkill -STOP" not in script
+        assert "use_scan_relay:=true" in script
+
+
 class TestCostmaps:
     def test_inflation_is_identical_in_both_costmaps(self, local_costmap, global_costmap):
         """Differing inflation makes the planner produce paths the controller
@@ -184,6 +271,60 @@ class TestCostmaps:
             "inflation_radius %.2f leaves only %.2f m of free half-width for a "
             "robot %.2f m wide" % (radius, free_half_width, robot_half_width * 2)
         )
+
+    def test_inflation_leaves_a_lane_past_an_obstacle_in_the_aisle(self, local_costmap):
+        """The constraint that actually stopped the robot, and the reason this
+        test exists.
+
+        A person standing in the middle of the aisle is inflated from one side,
+        and the racking is inflated from the other. If the two inflated regions
+        meet there is no zero-cost route past the obstacle at all, NavFn
+        eventually reports "failed to create plan", and the mission aborts. At
+        inflation_radius 0.65 the aisle was closed by 0.15 m and none of the
+        other tests here noticed.
+
+        Obstacle positions come from the world generator rather than from a
+        constant, so moving a pallet or a person re-derives the bound.
+        """
+        import sys
+
+        sys.path.insert(0, str(REPO_ROOT / "simulation"))
+        import generate_world as world
+
+        radius = local_costmap["inflation_layer"]["inflation_radius"]
+        aisle_half_width = world.AISLE_HALF_WIDTH
+        localisation_rmse = 0.077  # measured; docs/localisation-accuracy.md
+
+        # (half-width across the aisle, centre y) for everything left in the aisle.
+        obstacles = [("person", 0.25, y) for _, y in world.PEOPLE]
+        obstacles += [("pallet", 0.8 / 2.0, y) for _, y in world.FLOOR_PALLETS]
+
+        # And wherever the fault injector *moves* one to. block_aisle originally
+        # dropped a pallet dead centre, leaving a 0.06 m lane, so the "replan
+        # around the obstacle" fault was really an impassable-aisle fault and
+        # the robot was marked as failing to recover from it.
+        schedule = _load_yaml(SRC / "amr_bringup" / "config" / "fault_schedule.yaml")
+        obstacles += [
+            ("pallet dropped by %s" % fault["type"], 0.8 / 2.0, float(fault["y"]))
+            for fault in schedule["faults"]
+            if fault["type"] == "block_aisle"
+        ]
+
+        for kind, half_width, centre in obstacles:
+            # A robot passes on whichever side is wider, so the binding
+            # constraint is the wider gap, not the nearer rack face.
+            north = aisle_half_width - (centre + half_width)
+            south = (centre - half_width) + aisle_half_width
+            free = max(north, south)
+            lane = free - 2 * radius
+            assert lane >= 2 * localisation_rmse, (
+                "a %s %.2f m wide at y=%+.2f leaves a zero-cost lane of %.3f m at "
+                "inflation_radius %.2f, which is under twice the measured "
+                "localisation RMSE of %.3f m. The planner has no route it can "
+                "hold. inflation_radius must be below %.3f here."
+                % (kind, 2 * half_width, centre, lane, radius, localisation_rmse,
+                   (free - 2 * localisation_rmse) / 2.0)
+            )
 
     def test_inflation_exceeds_the_circumscribed_radius(self, local_costmap):
         """Below the circumscribed radius the robot's own corners can reach
@@ -560,3 +701,62 @@ class TestBehaviourTrees:
             round_robin.index("<Wait"),
         ]
         assert order == sorted(order), "recovery actions are not in escalating order"
+
+
+class TestMissionWaypoints:
+    """The mission has to be executable in a 2.8 m aisle.
+
+    Nothing in Nav2 checks that a goal is sensible for the space it is in, so
+    these assertions stand in for the judgement a person would apply.
+    """
+
+    @staticmethod
+    def _waypoints():
+        return _load_yaml(WAYPOINTS)["waypoints"]
+
+    def test_waypoints_stay_on_the_aisle_centreline(self):
+        """Racking faces sit at |y| = 1.35 and the robot is 0.55 m wide."""
+        for w in self._waypoints():
+            assert abs(float(w["y"])) < 0.5, (
+                "waypoint at y=%.2f is off the centreline in a 2.8 m aisle" % w["y"]
+            )
+
+    def test_waypoint_headings_match_the_approach_direction(self):
+        """A heading that differs from the approach makes the robot rotate
+        while it is still translating.
+
+        DWB's path critics reward aligning with the planned path, so a waypoint
+        asking for a heading the robot is not already on turns it mid-leg. In a
+        2.8 m aisle that sweeps a 0.70 m body into the racking, and it is
+        exactly what happened: the robot held the centreline to within 0.16 m
+        for 19 m, then on the leg toward a waypoint asking for yaw = pi it began
+        turning at x = 10.2 and wedged against the rack face at y = 1.24 facing
+        across the aisle, with no recovery having fired.
+
+        A direction reversal is legitimate, but it must happen where the robot
+        is already stopped, so DWB can execute it as an in-place rotation.
+        """
+        import math
+
+        waypoints = self._waypoints()
+        previous_x = -12.0  # spawn, from simulation/generate_world.py
+        for index, w in enumerate(waypoints):
+            dx = float(w["x"]) - previous_x
+            if abs(dx) > 0.5:  # a leg with real travel defines an approach
+                approach = 0.0 if dx > 0 else math.pi
+                diff = abs((float(w["yaw"]) - approach + math.pi) % (2 * math.pi) - math.pi)
+                assert diff < 0.1, (
+                    "waypoint %d asks for yaw %.3f but is approached on heading %.3f; "
+                    "the robot would rotate while translating"
+                    % (index, float(w["yaw"]), approach)
+                )
+            previous_x = float(w["x"])
+
+    def test_waypoints_clear_the_aisle_pallets(self):
+        """The world leaves pallets at x in [-7.1, -5.9] and [3.4, 4.6]."""
+        for w in self._waypoints():
+            for x0, x1 in ((-7.1, -5.9), (3.4, 4.6)):
+                assert not (x0 - 0.6) <= float(w["x"]) <= (x1 + 0.6), (
+                    "waypoint at x=%.2f sits on the pallet spanning [%.1f, %.1f]"
+                    % (w["x"], x0, x1)
+                )

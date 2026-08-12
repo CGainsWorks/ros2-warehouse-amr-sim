@@ -11,6 +11,9 @@
 #   inscribed radius     0.275 m  (half-width)
 #   circumscribed radius 0.445 m  (sqrt(0.35^2 + 0.275^2))
 #   wheel separation     0.50 m, differential drive
+#   aisle clear width    2.80 m  (racking faces at y = +/-1.40)
+#   racking bay pitch    2.70 m, repeating for 30 m
+#   map resolution       0.05 m
 #
 # The footprint is WIDER than the chassis, and deliberately so. The drive wheels
 # are 0.05 m wide centred at y = +/-0.25, so they reach y = +/-0.275 — 25 mm
@@ -18,12 +21,9 @@
 # robot is narrower than it is, and the parts sticking out are precisely the
 # ones that would hit the racking. The footprint tracks the widest point of the
 # robot, whatever that happens to be.
-#   aisle clear width    2.80 m  (racking faces at y = +/-1.40)
-#   racking bay pitch    2.70 m, repeating for 30 m
-#   map resolution       0.05 m
 #
 # The two facts that drive the tuning are that the aisle is narrow relative to
-# the robot — 1.15 m of clearance either side — and that the racking repeats,
+# the robot — 1.125 m of clearance either side — and that the racking repeats,
 # which is a localisation problem that shows up here as occasional pose jumps
 # the controller has to survive.
 
@@ -157,14 +157,38 @@ controller_server:
       # corresponds exactly to max_wheel_acceleration of 10 rad/s^2 at the
       # 0.10 m wheel radius set in amr_description. A planner that assumes more
       # deceleration than the base delivers overshoots every goal.
+      # 0.45 m/s, not 0.80. The higher figure was set from what the base can
+      # do rather than from what the aisle allows, and the aisle is the binding
+      # constraint.
+      #
+      # Work the geometry at the pallet the world leaves at (4.0, 0.35). The 2D
+      # LiDAR sees its stack spanning y = 0.05 to 0.65. Inflated by 0.65 m that
+      # covers y = -0.60 to 1.30, and the north rack face's own inflation
+      # reaches down to y = 0.70. The zero-cost gap left on the south side is
+      # about 0.10 m wide, for a robot 0.55 m across. There is no free path
+      # past that pallet: the robot must traverse inflated cells, and it has
+      # roughly 0.4 m of true clearance while doing so.
+      #
+      # At 0.80 m/s with a 1.7 s rollout the controller commits 1.36 m ahead,
+      # which is longer than the gap it is threading. Measured: the robot
+      # avoided the pallet correctly to y = -0.65, then overshot the return to
+      # the centreline as far as y = +0.92 with nothing on that side to avoid,
+      # entered the rack inflation and stopped. Reducing the path-following
+      # gains did not change it; the correction simply cannot finish inside the
+      # distance the controller has already committed to.
+      #
+      # 0.45 m/s gives a 0.77 m rollout, comfortably shorter than the aisle's
+      # clearance, and is a realistic speed for an AMR in a 2.8 m aisle with
+      # obstacles in it. max_speed_xy and the velocity smoother follow it;
+      # tests/test_config_consistency.py asserts they agree.
       min_vel_x: 0.0
-      max_vel_x: 0.80
+      max_vel_x: 0.45
       # Differential drive: no lateral motion is possible at all.
       min_vel_y: 0.0
       max_vel_y: 0.0
       max_vel_theta: 1.20
       min_speed_xy: 0.0
-      max_speed_xy: 0.80
+      max_speed_xy: 0.45
       # Below this the robot is considered to be doing an in-place rotation, and
       # the rotation critics take over from the translation ones.
       min_speed_theta: 0.0
@@ -178,7 +202,7 @@ controller_server:
 
       # --- Trajectory generation --------------------------------------------
       #
-      # 1.7 s at 0.8 m/s is a 1.36 m rollout. This is the single most consequential
+      # 1.7 s at 0.45 m/s is a 0.77 m rollout. This is the single most consequential
       # DWB parameter in a narrow aisle and it is a genuine trade:
       #
       #   Longer  (2.5 s, 2.0 m): the robot sees the far side of a gap and
@@ -236,15 +260,22 @@ controller_server:
         - PathDist
         - GoalDist
 
-      # Distance from the planned path. Raised from the Nav2 default of 32 to
-      # 44: in a 2.8 m aisle the global path down the centreline is very nearly
-      # the only safe route, and letting the controller wander off it to shave a
-      # corner puts the robot into the inflation band beside the racking.
-      PathDist.scale: 44.0
-      # Heading agreement with the path. Raised from 32 to 40 for the same
-      # reason; a differential base that drifts in heading in a corridor ends up
-      # crabbing towards a rack face.
-      PathAlign.scale: 40.0
+      # Nav2 defaults, restored after the raised values were measured.
+      #
+      # These were 44 and 40, argued from "in a 2.8 m aisle the centreline is
+      # very nearly the only safe route, so track it hard". The argument sounds
+      # right and the behaviour it produced was an underdamped path controller:
+      # after the legitimate excursion around the pallet at (4.0, 0.35) the
+      # robot overshot the return to the centreline, reaching y = +0.98 with
+      # nothing on that side to avoid, ran into the inflation band beside the
+      # racking and stopped with no valid trajectory.
+      #
+      # A path-following gain is a gain. Raising it does not make the robot
+      # track the line more obediently, it makes the correction more violent
+      # relative to the 1.36 m DWB commits to ahead of itself, and the result
+      # oscillates. The defaults are the defaults for a reason.
+      PathDist.scale: 32.0
+      PathAlign.scale: 32.0
       # How far ahead of the robot the alignment is evaluated. 0.325 m is just
       # under half the robot length, which keeps the alignment critic from
       # reacting to path curvature the robot is already inside.
@@ -395,7 +426,7 @@ local_costmap:
         # the radius to 0.9 m would close that corridor entirely and force every
         # plan through non-zero cost, at which point the cost gradient stops
         # meaning "avoid this" and starts meaning nothing at all.
-        inflation_radius: 0.65
+        inflation_radius: 0.47
         # Decay rate. At the inflation radius the residual cost is
         # 253 * exp(-3.0 * (0.65 - 0.25)) = 76, so there is a step from 76 to 0
         # at the boundary. That discontinuity is a known property of Nav2's
@@ -403,7 +434,7 @@ local_costmap:
         # racking, where PathDist and GoalDist dominate the DWB score anyway,
         # and removing it by raising the factor to ~8 would compress the entire
         # useful gradient into the first 10 cm beyond the robot's own edge.
-        cost_scaling_factor: 3.0
+        cost_scaling_factor: 5.8
         inflate_unknown: false
 
       always_send_full_costmap: true
@@ -471,8 +502,8 @@ global_costmap:
         # produces a path through a gap the local costmap considers costly, the
         # controller refuses to follow it, and the robot oscillates between
         # replanning and recovery with nothing obviously wrong in either log.
-        inflation_radius: 0.65
-        cost_scaling_factor: 3.0
+        inflation_radius: 0.47
+        cost_scaling_factor: 5.8
         inflate_unknown: false
 
       always_send_full_costmap: true
@@ -561,7 +592,7 @@ velocity_smoother:
     smoothing_frequency: 20.0
     scale_velocities: false
     feedback: OPEN_LOOP
-    max_velocity: [0.80, 0.0, 1.20]
+    max_velocity: [0.45, 0.0, 1.20]
     min_velocity: [-0.30, 0.0, -1.20]
     # Matches acc_lim_x / acc_lim_theta above and, through them, the base's
     # actual wheel acceleration limit.

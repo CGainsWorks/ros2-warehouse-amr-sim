@@ -125,15 +125,27 @@ velocity profile, so the result measures the estimator and not the controller:
 | EKF fused | 0.183 m | 4.63° | consistent |
 | **AMCL** | **0.077 m** | **1.18°** | **consistent** |
 
-Both filters started this session above 6.6 m. Both are now statistically
-consistent, and AMCL is the best estimator in the stack — which is what it is
-for, since correcting the EKF's drift is its whole job.
+Both filters started above 6.6 m. Both are now statistically consistent, and
+AMCL is the best estimator in the stack — which is what it is for, since
+correcting the EKF's drift is its whole job.
 
-**The mission still does not complete.** It drives 34.7 m of path and 24 m net,
-from the west end almost to the east end, with AMCL holding a median error of
-0.31 m. It previously managed about 7 m. The robot then drifts laterally until
-it touches the rack face and jams. That is now a **controller** problem, not an
-estimator one, and it is the next thing to look at.
+**The full mission, end to end** — six waypoints, 56 m, Nav2 in the loop:
+
+| Source | ATE RMSE | max | Yaw RMSE | Path vs truth | Covariance |
+|---|---|---|---|---|---|
+| Wheel odometry | 2.788 m | 7.243 m | 2.01° | +0% | — |
+| EKF fused | 0.320 m | 0.800 m | 0.33° | +0% | consistent |
+| **AMCL** | **0.119 m** | **0.226 m** | **0.79°** | +1% | consistent (NEES 2.05) |
+
+**Zero discontinuities over 0.5 m.** In a map whose racking repeats every 2.7 m,
+a localiser that never once jumps a bay across 56 m is the result that matters
+more than the RMSE.
+
+Wheel odometry drifts 2.8 m over 56 m and that is *correct behaviour* — dead
+reckoning with a 5% scale error is what it is for. What matters is that its path
+length is within 0% of ground truth: **no slip anywhere in the run**. Earlier
+missions over-reported by 276%, 169%, 56% and 36%, every one of them a robot
+pinned against something with its wheels turning.
 
 ### The decoupling that made this measurable
 
@@ -146,13 +158,14 @@ successive mission runs. In the open-loop harness, same code, no Nav2, it
 over-reports by **0%**. None of those were sensor faults — the robot was pinned
 against a pallet with its wheels turning.
 
-### Four bugs that only a system test could find
+### Five defects that only a system test could find
 
 | Bug | Effect |
 |---|---|
 | `gazebo_ros_diff_drive` publishes an **unsigned** wheel twist (`sqrt(dx²+dy²)`) | Every reverse integrated as a forward. EKF ATE 6.72 m → 0.157 m when fixed |
 | IMU `ax` fused with a 0.1 m/s² bias, no bias estimation | Constant acceleration integrated into position |
 | Trimmed ICP discards the racking uprights as outliers | In a corridor of parallel walls those are the only points constraining motion; at `trim_ratio` 0.80 the matcher lost half the motion, at 0.60 all of it |
+| `inflation_radius: 0.65`, sized for an **empty** aisle | A person standing in the middle of a 2.8 m aisle is inflated from one side and the racking from the other. The two met, **closing the aisle by 0.15 m**. No zero-cost route past them existed, and NavFn ended the run with `failed to create plan`. The robot stalled 8 cm from the person for 21 s, wheels turning, which fed AMCL 0.79 m of motion that never happened |
 | AMCL `z_rand: 0.5` — half the measurement weight uniform | A uniform term awards the same likelihood to every hypothesis however badly it fits, so in a map repeating every 2.7 m the right bay could not be told from the wrong one. AMCL 1.272 m → **0.077 m** |
 
 Full diagnosis, an experiment that made AMCL six times worse, and the
@@ -186,7 +199,7 @@ src/amr_perception/    ground removal, clustering, zones, occupancy
 src/amr_bringup/       launch, mission runner, pose logger, fault injector
 simulation/            world generator, worlds, zones, reference map
 analysis/              localisation error, segmentation metrics, recovery matrix
-tests/                 171 tests, ~4 s, no ROS required
+tests/                 197 tests, ~4 s, no ROS required
 ```
 
 Every algorithm lives in a `core/` subpackage that imports nothing from ROS. That
@@ -224,7 +237,7 @@ people from 62.5% to 93.8%.
 
 | Command | Needs | Produces |
 |---|---|---|
-| `make test` | Python | 171 unit tests |
+| `make test` | Python | 197 unit tests |
 | `make segmentation` | Python | `results/segmentation.json` |
 | `make scan-odometry` | Python | `results/scan_odometry.json` |
 | `make check` | Python | all of the above |

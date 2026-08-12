@@ -3,21 +3,36 @@
 Stated plainly. Several of these are consequences of deliberate design choices
 and are recorded here rather than hidden.
 
-## Not yet run
+## What has and has not been run
 
-**The Gazebo simulation has not been executed.** Everything that runs without
-ROS — 171 unit tests, the segmentation benchmark, the scan-odometry benchmark —
-has been run, and its numbers appear in the docs. Everything requiring Gazebo has
-been implemented and reviewed but not executed, so:
+Everything in this repository has now been executed. The figures in the docs
+come from runs, not from review.
 
-* `docs/localisation-accuracy.md` has no AMCL or EKF figures.
-* `docs/recovery-matrix.md` has an empty results table.
-* The README has no demo GIF.
+* **Offline, no ROS** — 197 unit tests, the segmentation benchmark and the
+  scan-odometry benchmark. Reproduce identically on Windows and WSL.
+* **Gazebo** — mapping, the full six-waypoint mission, the open-loop
+  localisation harness, and five fault-injection runs.
 
-The launch files, Docker image and CI build job are written and the ROS packages
-are structured to build, but "builds and launches cleanly" is a claim that has
-not been verified on a machine with Gazebo. Expect to fix something the first
-time you run `make demo`.
+What is still missing:
+
+**No demo GIF or video.** Every claim is a number in a JSON file rather than
+something you can watch.
+
+**One machine, one simulator build.** ROS 2 Humble and Gazebo Classic 11 in the
+supplied Docker image, on one laptop. Gazebo's ODE solver is not deterministic
+across machines, and the contact-heavy moments — the pallet nudge, the recovery
+reversals — are exactly where that shows. Expect the mission to complete and the
+localisation figures to land in the same range; do not expect them to match to
+three decimals.
+
+**Scan odometry ships disabled.** It is wired into the EKF and off by default,
+because it degrades the estimate in simulation while improving it by 63% on the
+offline benchmark. Both results are real and the discrepancy is diagnosed in
+[localisation-accuracy.md](localisation-accuracy.md), but it is not fixed.
+
+**The kidnap fault is not survivable**, by an explicit and measured trade: random
+particle injection is disabled because it made localisation six times worse in a
+map that repeats every 2.7 m. See [recovery-matrix.md](recovery-matrix.md).
 
 ## Perception
 
@@ -154,6 +169,16 @@ holds.
 ray-traced world with no reflectivity effects, no multi-path, no dust, and no
 mixed pixels at object edges. Real LiDAR has all four, and all four make
 segmentation harder.
+
+**The NEES verdict does not distinguish over-conservative from well-calibrated.**
+`analysis/localisation_error.py` reports "consistent" for anything that is not
+overconfident, so a filter whose covariance is far too *large* passes. The EKF on
+the full mission reads a mean NEES of 0.00 against an expected 2.0 and is
+reported as consistent. It is not lying about being wrong, but it is claiming far
+more uncertainty than it has, and a downstream consumer that gated on the
+covariance would be needlessly cautious. Splitting the verdict into
+`overconfident` / `consistent` / `conservative` is a small change and has not
+been made.
 
 **NEES uses a diagonal covariance approximation.** The pose logger records only
 the diagonal, so the cross-covariance is unavailable. This overstates NEES when x

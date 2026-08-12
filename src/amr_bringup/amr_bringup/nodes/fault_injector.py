@@ -49,6 +49,8 @@ from gazebo_msgs.srv import SetEntityState
 from geometry_msgs.msg import PoseWithCovarianceStamped
 from rcl_interfaces.msg import ParameterDescriptor
 from rclpy.node import Node
+from rclpy.qos import QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile, QoSReliabilityPolicy
+from std_msgs.msg import Bool
 from std_srvs.srv import Empty
 
 from amr_common.transforms import quat_from_yaw
@@ -62,6 +64,7 @@ class FaultInjector(Node):
             "schedule_file", "", ParameterDescriptor(description="YAML fault schedule.")
         )
         self.declare_parameter("output", "results/faults.json")
+        self.declare_parameter("scan_relay_control", "scan_relay/blind")
 
         path = str(self.get_parameter("schedule_file").value)
         if not path:
@@ -75,6 +78,22 @@ class FaultInjector(Node):
         self._set_state = self.create_client(SetEntityState, "/gazebo/set_entity_state")
         self._initial_pose_pub = self.create_publisher(PoseWithCovarianceStamped, "/initialpose", 10)
         self._relocalise = self.create_client(Empty, "/reinitialize_global_localization")
+
+        # Transient-local so the relay latches the command even if it is not
+        # yet matched when the fault fires. Dropping a "restore" would leave the
+        # robot blind for the rest of the run and the matrix would blame the
+        # wrong fault.
+        self._blind_pub = self.create_publisher(
+            Bool,
+            str(self.get_parameter("scan_relay_control").value),
+            QoSProfile(
+                history=QoSHistoryPolicy.KEEP_LAST,
+                depth=1,
+                reliability=QoSReliabilityPolicy.RELIABLE,
+                durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+            ),
+        )
+        self._restore_timer = None
 
         self.create_timer(0.2, self._tick)
         self.get_logger().info(
@@ -100,7 +119,11 @@ class FaultInjector(Node):
             fault = self._pending.pop(0)
             self._apply(fault, elapsed)
 
-        if not self._pending and self._applied:
+            # Written after every fault, not once at the end of the schedule.
+            # A fault run is expected to abort — that is what it is for — and
+            # the earlier version only wrote when the schedule had completely
+            # drained, so an abort at fault 3 of 5 produced no record at all
+            # and `run_faults.sh` could not build the matrix.
             self._write()
 
     def _apply(self, fault: dict, elapsed: float) -> None:
@@ -116,12 +139,7 @@ class FaultInjector(Node):
             elif kind == "relocalise":
                 detail = self._request_relocalisation()
             elif kind == "sensor_dropout":
-                # Handled outside this node: the launch file wraps the LiDAR
-                # topic in a relay that scripts/inject_faults.sh stops and
-                # restarts. A node cannot make a Gazebo sensor stop publishing
-                # without unloading the plugin, and unloading it is not
-                # recoverable within a run.
-                detail = "signalled (external relay)"
+                detail = self._sensor_dropout(fault)
             else:
                 detail = "unknown fault type, skipped"
                 self.get_logger().error("unknown fault type %r" % kind)
@@ -132,6 +150,32 @@ class FaultInjector(Node):
         self._applied.append(
             {"t": elapsed, "type": kind, "params": {k: v for k, v in fault.items() if k != "at"}, "detail": detail}
         )
+
+    def _sensor_dropout(self, fault: dict) -> str:
+        """Blind the LiDAR for `duration` seconds, via amr_bringup's scan_relay.
+
+        A Gazebo sensor cannot be stopped and restarted inside a run, so the
+        scan is passed through a relay that is told to stop forwarding. The
+        relay is only in the path when `run_faults.sh` puts it there.
+
+        The restore is a one-shot timer rather than a sleep: this node runs on
+        the same executor as its own schedule, and blocking it would delay
+        every later fault by the dropout duration.
+        """
+        duration = float(fault.get("duration", 4.0))
+
+        if self._blind_pub is None:
+            return "no scan_relay control publisher"
+
+        self._blind_pub.publish(Bool(data=True))
+
+        def _restore() -> None:
+            self._blind_pub.publish(Bool(data=False))
+            self.get_logger().warn("sensor dropout ended after %.1f s" % duration)
+            self._restore_timer.cancel()
+
+        self._restore_timer = self.create_timer(duration, _restore)
+        return "LiDAR blinded for %.1f s" % duration
 
     def _teleport(self, fault: dict) -> str:
         if not self._set_state.wait_for_service(timeout_sec=2.0):
@@ -179,12 +223,16 @@ class FaultInjector(Node):
         self._relocalise.call_async(Empty.Request())
         return "requested global relocalisation"
 
+    def flush(self) -> None:
+        """Write the record if anything has been injected. Idempotent."""
+        if self._applied:
+            self._write()
+
     def _write(self) -> None:
         out_path = Path(str(self.get_parameter("output").value))
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(json.dumps({"faults": self._applied}, indent=2), encoding="utf-8")
         self.get_logger().info("wrote %s (%d faults)" % (out_path, len(self._applied)))
-        self._applied = []  # only write once
 
 
 def main(args=None) -> None:
@@ -195,6 +243,13 @@ def main(args=None) -> None:
     except KeyboardInterrupt:
         pass
     finally:
+        # The mission runner exits non-zero on an aborted mission, which tears
+        # the whole launch down with a SIGINT. Flush here so the record survives
+        # that path as well as the clean one.
+        try:
+            node.flush()
+        except Exception:  # pragma: no cover - shutdown best effort
+            pass
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()

@@ -15,6 +15,7 @@ from launch_ros.substitutions import FindPackageShare
 def generate_launch_description() -> LaunchDescription:
     use_sim_time = LaunchConfiguration("use_sim_time")
     use_gazebo = LaunchConfiguration("use_gazebo")
+    scan_topic = LaunchConfiguration("scan_topic")
 
     xacro_file = PathJoinSubstitution(
         [FindPackageShare("amr_description"), "urdf", "amr.urdf.xacro"]
@@ -25,7 +26,9 @@ def generate_launch_description() -> LaunchDescription:
     # a parameter type from the expanded URDF text, and a description that
     # happens to start with a digit gets published as a number.
     robot_description = ParameterValue(
-        Command(["xacro ", xacro_file, " use_gazebo:=", use_gazebo]), value_type=str
+        Command(["xacro ", xacro_file, " use_gazebo:=", use_gazebo,
+                 " scan_topic:=", scan_topic]),
+        value_type=str,
     )
 
     return LaunchDescription(
@@ -35,6 +38,11 @@ def generate_launch_description() -> LaunchDescription:
                 "use_gazebo",
                 default_value="true",
                 description="Include the Gazebo plugin block. False for a real robot or a bag replay.",
+            ),
+            DeclareLaunchArgument(
+                "scan_topic",
+                default_value="scan",
+                description="Topic the 2D LiDAR publishes on. run_faults.sh sets scan_raw.",
             ),
             Node(
                 package="robot_state_publisher",
