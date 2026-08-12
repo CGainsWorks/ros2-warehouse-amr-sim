@@ -11,7 +11,9 @@ set -euo pipefail
 
 RESULTS="${1:-results}"
 TIMEOUT_STARTUP="${TIMEOUT_STARTUP:-180}"
-TIMEOUT_MISSION="${TIMEOUT_MISSION:-400}"
+# 900 s. Gazebo runs at roughly 0.3-0.5x real time here, so a six-waypoint
+# mission over ~50 m does not fit in 400 s even when navigation behaves.
+TIMEOUT_MISSION="${TIMEOUT_MISSION:-900}"
 
 mkdir -p "${RESULTS}"
 
@@ -32,7 +34,7 @@ trap cleanup EXIT INT TERM
 # IMU alone. Running the evaluation both ways is what isolates the LiDAR
 # odometry's end-to-end contribution, as opposed to the component benchmark in
 # analysis/scan_odometry_benchmark.py.
-USE_SCAN_ODOMETRY="${USE_SCAN_ODOMETRY:-true}"
+USE_SCAN_ODOMETRY="${USE_SCAN_ODOMETRY:-false}"
 
 echo "--- starting simulation (headless, scan odometry: ${USE_SCAN_ODOMETRY})"
 setsid ros2 launch amr_bringup simulation.launch.py headless:=true \

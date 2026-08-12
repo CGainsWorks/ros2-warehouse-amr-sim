@@ -335,14 +335,31 @@ class TestLocalisation:
         ekf = _load_yaml(EKF_PARAMS)["ekf_filter_node"]["ros__parameters"]
         assert "odom0" in ekf and "imu0" in ekf and "odom1" in ekf
 
-    def test_wheel_odometry_is_fused_as_velocity_not_pose(self):
-        """Fusing wheel pose double-counts error the filter has already
-        integrated and makes the covariance optimistic."""
+    def test_wheel_odometry_is_fused_differentially_not_as_raw_twist(self):
+        """The plugin's twist has no sign, so the pose must be used instead.
+
+        gazebo_ros_diff_drive computes its ENCODER forward velocity as
+        sqrt(dx^2 + dy^2)/dt, a magnitude that is never negative. The pose it
+        integrates is correctly signed; the twist is not. Fusing the twist
+        integrates every reverse as a forward: on an open-loop profile driving
+        3.5 m out and back, ground truth and the wheel pose both returned to the
+        start (net 1.2 m and 1.34 m) while the EKF ran to a net 11.7 m with a
+        perfectly correct path length, because it was integrating |v|.
+
+        Differential mode differentiates the pose, so this is still velocity
+        fusion — it just keeps the sign.
+        """
         ekf = _load_yaml(EKF_PARAMS)["ekf_filter_node"]["ros__parameters"]
         config = ekf["odom0_config"]
-        assert not any(config[0:6]), "wheel odometry must not contribute absolute pose"
-        assert config[6] is True, "wheel odometry should contribute vx"
-        assert config[11] is True, "wheel odometry should contribute vyaw"
+        assert ekf["odom0_differential"] is True, (
+            "wheel odometry must be fused differentially; the plugin's twist is unsigned"
+        )
+        assert config[0] is True and config[1] is True, "differential mode needs x and y"
+        assert config[5] is True, "differential mode needs yaw"
+        assert not any(config[6:]), (
+            "do not fuse the plugin's twist: its linear.x is a magnitude and loses "
+            "the sign of reverse motion"
+        )
 
     def test_scan_odometry_is_differential(self):
         """A dead-reckoned source whose absolute value drifts must be fused as
@@ -357,6 +374,23 @@ class TestLocalisation:
         ekf = _load_yaml(EKF_PARAMS)["ekf_filter_node"]["ros__parameters"]
         assert ekf["imu0_config"][5] is False, "IMU absolute yaw must not be fused"
         assert ekf["imu0_config"][11] is True, "IMU should contribute yaw rate"
+
+    def test_imu_linear_acceleration_is_not_fused(self):
+        """A biased accelerometer integrates straight into position drift.
+
+        robot_localization does not estimate accelerometer bias, and the
+        simulated IMU carries 0.1 m/s^2 of it. Fusing ax made the filter
+        integrate that bias into a phantom forward velocity: on an open-loop
+        profile that drives 3.5 m out and back, true net displacement 1.2 m and
+        wheel odometry 1.34 m, the EKF reported 11.6 m and an ATE of 6.7 m
+        against wheel odometry's 0.49 m — six times worse than its own input.
+        A wheel encoder measures forward velocity directly and far better.
+        """
+        ekf = _load_yaml(EKF_PARAMS)["ekf_filter_node"]["ros__parameters"]
+        assert ekf["imu0_config"][12] is False, (
+            "IMU linear acceleration is fused; without bias estimation this "
+            "integrates the accelerometer bias into position"
+        )
 
     def test_amcl_consumes_the_ekf_output_frame(self):
         amcl = _load_yaml(AMCL_PARAMS)["amcl"]["ros__parameters"]

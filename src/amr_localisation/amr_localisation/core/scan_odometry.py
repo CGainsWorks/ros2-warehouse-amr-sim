@@ -58,13 +58,13 @@ class ScanOdometry:
         keyframe_distance: float = 0.35,
         keyframe_rotation: float = 0.35,
         min_fitness: float = 0.60,
-        max_mean_residual: float = 0.030,
+        max_mean_residual: float = 0.040,
         require_converged: bool = True,
         retry_unseeded: bool = True,
         max_keyframe_age: int = 50,
         max_correspondence_distance: float = 0.50,
         max_iterations: int = 50,
-        trim_ratio: float = 0.80,
+        trim_ratio: float = 0.95,
         inlier_distance: float = 0.05,
         initial_pose: Pose = (0.0, 0.0, 0.0),
     ) -> None:
@@ -125,11 +125,17 @@ class ScanOdometry:
     def _acceptable(self, result: Optional[MatchResult]) -> bool:
         """Three independent gates, all of which must pass.
 
-        Thresholds are measured, not assumed. ``tests/test_scan_matcher.py``
-        reproduces the distributions they come from: over correct matches on
-        this floorplan the trimmed mean residual never exceeds 0.023 m, so the
-        0.030 m ceiling sits just outside the good population. The residual
-        floor of ~0.018 m is set by the 0.5 degree beam spacing rather than by
+        Thresholds are measured, not assumed, and they were re-measured when
+        ``trim_ratio`` moved from 0.80 to 0.95. Raising the trim raises the
+        residual, because the mean now includes correspondences the old value
+        discarded: correct matches went from a 0.023 m maximum to 0.035 m. The
+        0.030 m ceiling calibrated at the old trim would therefore have started
+        rejecting healthy matches — a threshold is only valid for the
+        configuration it was measured under. 0.040 m sits above the good
+        population's maximum (0.035) and below the median of incorrect matches
+        (0.046).
+
+        The residual floor is set by the 0.5 degree beam spacing rather than by
         range noise — at 10 m one beam step is 87 mm, so nearest-neighbour
         distance is dominated by angular sampling.
 

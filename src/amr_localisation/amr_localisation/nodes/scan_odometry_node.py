@@ -102,7 +102,15 @@ class ScanOdometryNode(Node):
         )
         self.declare_parameter("max_correspondence_distance", 0.50, _describe("ICP association cutoff, metres."))
         self.declare_parameter("max_iterations", 30, _describe("ICP iteration cap."))
-        self.declare_parameter("trim_ratio", 0.80, _describe("Fraction of correspondences kept per iteration."))
+        self.declare_parameter(
+            "trim_ratio",
+            0.95,
+            _describe(
+                "Fraction of correspondences kept per iteration. Must stay high: "
+                "trimming discards the racking uprights, which are the only "
+                "points constraining motion along a corridor of parallel walls."
+            ),
+        )
         self.declare_parameter("range_min", 0.10, _describe("Discard returns closer than this, metres."))
         self.declare_parameter("range_max", 20.0, _describe("Discard returns further than this, metres."))
         self.declare_parameter(

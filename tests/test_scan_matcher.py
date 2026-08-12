@@ -99,7 +99,7 @@ class TestMatchAccuracy:
         # gates start rejecting healthy data and this catches it here rather
         # than as a mysteriously high reject rate on the robot.
         assert np.percentile(fitness, 5) > 0.60
-        assert np.max(residual) < 0.030
+        assert np.max(residual) < 0.040
 
     def test_reports_failure_on_too_few_points(self, floorplan):
         a = simulate_2d_scan(floorplan, (0.0, 0.0, 0.0), seed=1)

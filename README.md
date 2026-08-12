@@ -98,45 +98,66 @@ is in the stack to cover.
 
 | | Wheel odometry | LiDAR odometry | |
 |---|---|---|---|
-| ATE RMSE | 0.574 m | **0.105 m** | −82% |
-| ATE 95th percentile | 0.851 m | 0.136 m | |
-| Yaw RMSE | 0.59° | **0.12°** | −80% |
-| RPE translation RMSE (1 s) | 0.0705 m | **0.0174 m** | −75% |
+| ATE RMSE | 0.574 m | **0.215 m** | −63% |
+| ATE 95th percentile | 0.851 m | 0.385 m | |
+| Yaw RMSE | 0.59° | **1.04°** | |
+| RPE translation RMSE (1 s) | 0.0705 m | **0.0192 m** | −73% |
 
-0.5% of matches rejected; 3.8 ms median per match.
+0.8% of matches rejected; 3.0 ms median per match.
+
+**Read this table next to the simulated one below, because they disagree.** The
+same code that scores a 63% improvement here tracks nothing at all in the
+simulated corridor, and the simulated result is the one that counts.
 
 Both tables reproduce **identically** on Windows (Python 3.9, numpy 1.26,
 scipy 1.13) and WSL Ubuntu 22.04 (Python 3.10, numpy 1.21, scipy 1.8) — every
 stochastic step takes a fixed seed, so the pipeline is deterministic end to end.
 Latency differs, as it should; the slower machine's figures are the ones quoted.
 
-### End-to-end in Gazebo — runs, but does not yet localise well
+### End-to-end in Gazebo
 
-The full stack now builds, launches and drives in Gazebo, and the evaluation
-produces real numbers. Those numbers are bad, and they are published anyway
-because the reason is the interesting part:
+The stack builds, launches and drives. Localisation is now good; navigation is
+not yet, and both numbers are published.
 
-| | scan odometry ON | scan odometry OFF |
-|---|---|---|
-| AMCL ATE RMSE | 4.53 m | 4.31 m |
-| Wheel odometry ATE RMSE | 0.74 m | 1.59 m |
-| Mission outcome | aborted | aborted |
+**Localisation, measured with the navigation stack out of the loop** — a fixed
+velocity profile, 12.4 m, so the result measures the estimator and not the
+controller:
 
-**The offline benchmark says the scan matcher cuts ATE by 82%. The end-to-end
-run says switching it on costs the EKF 40% of the robot's motion** — the filter
-reports 6.47 m where the wheels report 10.88 m and the robot travelled 10.56 m.
-AMCL consumes that estimate, so it lags further behind every second (0.18 → 1.24
-→ 2.26 → 3.51 m) until Nav2 gives up and runs its recovery ladder.
+| Source | ATE RMSE | Yaw RMSE | Covariance |
+|---|---|---|---|
+| Wheel odometry | 0.482 m | 24.4° | — |
+| **EKF fused** | **0.157 m** | **3.91°** | **consistent** |
+| AMCL | 1.272 m | 33.9° | overconfident |
 
-Both measurements are correct. They measure different things, and only the
-second one is the system. That is the entire argument for evaluating end to end
-instead of trusting a green component benchmark, and it is why the ablation
-switch exists.
+The EKF started this session at **6.72 m** and is now the best estimator in the
+stack and the only one whose reported covariance is statistically honest.
 
-Full diagnosis, the ablation table and the outstanding work are in
-[docs/localisation-accuracy.md](docs/localisation-accuracy.md). The recovery
-matrix is still unpopulated — the faults and the ladder are implemented, but no
-mission has completed, so there is nothing honest to tabulate yet.
+**No mission completes.** With localisation fixed in open loop, a Nav2 mission
+still aborts — the residual AMCL error is enough to put the robot where it does
+not think it is, and it collides. The recovery matrix is therefore still empty.
+
+### The decoupling that made this measurable
+
+A Nav2 mission cannot be used to tune localisation. A localisation error makes
+the costmap wrong, Nav2 runs recovery spins, the robot clips something, the
+wheels slip, and the slip corrupts the odometry localisation depends on.
+
+Wheel odometry "over-reported by 276%", then 169%, then 56%, then 36% across
+successive mission runs. In the open-loop harness, same code, no Nav2, it
+over-reports by **0%**. None of those were sensor faults — the robot was pinned
+against a pallet with its wheels turning.
+
+### Three bugs that only a system test could find
+
+| Bug | Effect |
+|---|---|
+| `gazebo_ros_diff_drive` publishes an **unsigned** wheel twist (`sqrt(dx²+dy²)`) | Every reverse integrated as a forward. EKF ATE 6.72 m → 0.157 m when fixed |
+| IMU `ax` fused with a 0.1 m/s² bias, no bias estimation | Constant acceleration integrated into position |
+| Trimmed ICP discards the racking uprights as outliers | In a corridor of parallel walls those are the only points constraining motion; at `trim_ratio` 0.80 the matcher lost half the motion, at 0.60 all of it |
+
+Full diagnosis, an experiment that made AMCL six times worse, and the
+outstanding work are in
+[docs/localisation-accuracy.md](docs/localisation-accuracy.md).
 
 ---
 
@@ -146,14 +167,14 @@ mission has completed, so there is nothing honest to tabulate yet.
 |---|---|
 | **Gazebo warehouse** | 30 × 12 m, 10 racking bays, generated from one set of constants alongside the zone definitions and the reference map |
 | **Cartographer SLAM** | 2D mapping, tuned against bay aliasing |
-| **AMCL** | localising against the saved map, with recovery injection enabled |
-| **EKF** | `robot_localization` fusing wheel odometry, IMU and LiDAR scan odometry |
+| **AMCL** | localising against the saved map; random-particle injection disabled, on measured evidence |
+| **EKF** | `robot_localization` fusing wheel odometry and IMU yaw rate. Scan odometry is wired in and **off by default** — it degrades the estimate in simulation |
 | **Scan odometry** | keyframed trimmed ICP, written here rather than vendored |
 | **Nav2** | NavFn + DWB, every costmap and DWB parameter justified |
 | **Recovery** | a 5-step ladder, exercised by 5 induced failures |
 | **Segmentation** | RANSAC ground removal with a seed band and normal constraint; range-adaptive Euclidean clustering |
 | **Zone occupancy** | 7 work zones, point-count based, asymmetric hysteresis |
-| **Evaluation** | ATE / RPE / NEES against Gazebo ground truth, with a leak check |
+| **Evaluation** | ATE / RPE / NEES against Gazebo ground truth, a per-source path-length audit, and an open-loop harness that decouples localisation from navigation |
 
 ```
 src/amr_common/        rigid-body maths, no ROS imports
@@ -211,6 +232,7 @@ people from 62.5% to 93.8%.
 | `make demo` | ROS 2 + Gazebo | the simulation, with RViz |
 | `make map` | ROS 2 + Gazebo | a Cartographer map |
 | `make eval` | ROS 2 + Gazebo | localisation accuracy vs ground truth |
+| `make openloop` | ROS 2 + Gazebo | localisation accuracy, Nav2 out of the loop |
 | `make faults` | ROS 2 + Gazebo | the recovery behaviour matrix |
 
 Docker equivalents: `make docker-check`, `make docker-demo`, or

@@ -46,6 +46,7 @@ setup(
             "pose_logger = amr_bringup.nodes.pose_logger:main",
             "mission_runner = amr_bringup.nodes.mission_runner:main",
             "fault_injector = amr_bringup.nodes.fault_injector:main",
+            "openloop_driver = amr_bringup.nodes.openloop_driver:main",
         ],
     },
 )

@@ -81,6 +81,14 @@ map:  ## Run Cartographer to build the warehouse map
 eval:  ## Run the mission with logging, then report localisation accuracy
 	./scripts/run_evaluation.sh $(RESULTS)
 
+.PHONY: openloop
+openloop:  ## Measure localisation with Nav2 out of the loop (the harness that isolates it)
+	./scripts/run_openloop.sh $(RESULTS)/openloop
+
+.PHONY: audit
+audit:  ## Path length per pose source: which link in the chain lost the motion
+	$(PYTHON) analysis/odometry_audit.py --results $(RESULTS)
+
 .PHONY: faults
 faults:  ## Run the mission with induced failures, then report the recovery matrix
 	./scripts/run_faults.sh $(RESULTS)

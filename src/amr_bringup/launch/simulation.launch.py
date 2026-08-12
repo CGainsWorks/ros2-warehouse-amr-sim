@@ -9,6 +9,7 @@ during debugging without tearing down the simulator.
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
+    GroupAction,
     ExecuteProcess,
     IncludeLaunchDescription,
     TimerAction,
@@ -67,7 +68,24 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("use_sim_time", default_value="true"),
             DeclareLaunchArgument("headless", default_value="true",
                                   description="Run Gazebo without the GUI. True in Docker and CI."),
-            DeclareLaunchArgument("use_scan_odometry", default_value="true"),
+            DeclareLaunchArgument(
+                "use_scan_odometry",
+                default_value="false",
+                description=(
+                    "Fuse LiDAR scan odometry into the EKF. Default false on "
+                    "measured evidence; see docs/localisation-accuracy.md."
+                ),
+            ),
+            DeclareLaunchArgument(
+                "use_navigation",
+                default_value="true",
+                description=(
+                    "Start Nav2. Set false for the open-loop localisation harness, "
+                    "which drives a fixed velocity profile so that localisation "
+                    "quality can be measured without the recovery/slip feedback "
+                    "loop that makes a mission run circular."
+                ),
+            ),
             DeclareLaunchArgument("use_rviz", default_value="false"),
             DeclareLaunchArgument("x", default_value="-12.0"),
             DeclareLaunchArgument("y", default_value="0.0"),
@@ -130,7 +148,15 @@ def generate_launch_description() -> LaunchDescription:
             # few seconds — the costmap simply warns that a buffer has not been
             # updated — so deferring perception costs nothing and removes the
             # contention.
-            TimerAction(period=10.0, actions=[navigation]),
+            TimerAction(
+                period=10.0,
+                actions=[
+                    GroupAction(
+                        actions=[navigation],
+                        condition=IfCondition(LaunchConfiguration("use_navigation")),
+                    )
+                ],
+            ),
 
             TimerAction(
                 period=28.0,

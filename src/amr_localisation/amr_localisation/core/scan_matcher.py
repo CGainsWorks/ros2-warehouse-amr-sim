@@ -19,11 +19,15 @@ directly, which is what ``tests/test_scan_matcher.py`` does.
 The algorithm is textbook point-to-point ICP with two additions that matter in a
 warehouse:
 
-* **Trimmed correspondences.** Racking is highly repetitive. A plain
-  nearest-neighbour association will happily match bay *n* to bay *n+1* and
-  produce a confident, entirely wrong 2.7 m translation. Keeping only the best
-  ``trim_ratio`` of correspondences by residual, re-evaluated every iteration,
-  makes the estimate robust to that whole class of mismatch.
+* **Lightly trimmed correspondences.** A small trim guards the least-squares
+  solve against a single wild correspondence. It must stay light: the original
+  version of this file trimmed to 0.80 on the theory that it would reject
+  bay-to-bay mismatches, and the theory was backwards. ``max_correspondence_distance``
+  already rejects genuine outliers; trimming beyond that removes good
+  correspondences with large residuals, and in a corridor of parallel walls
+  those are the racking uprights — the only features that constrain motion
+  along the aisle. Trimming them away lets ICP collapse to reporting no motion
+  at all, which is precisely what it did in simulation. See ``trim_ratio``.
 * **A reported fitness.** The matcher says how well it did — inlier fraction and
   residual — and the node refuses to publish when fitness is poor rather than
   emitting a confident bad velocity into the EKF.
@@ -151,7 +155,7 @@ def match_scans(
     max_correspondence_distance: float = 0.5,
     max_iterations: int = 30,
     tolerance: float = 1e-4,
-    trim_ratio: float = 0.80,
+    trim_ratio: float = 0.95,
     min_points: int = 30,
     inlier_distance: float = 0.05,
 ) -> Optional[MatchResult]:
@@ -175,9 +179,30 @@ def match_scans(
         largest expected point spacing.
     trim_ratio
         Fraction of surviving correspondences, ordered by residual, used in the
-        solve. 0.80 tolerates the 10-20% of a warehouse scan that is genuinely
-        unmatched between frames: newly revealed aisle behind a passed upright,
-        and points that fell off the far end of the range.
+        solve. 0.95, and it must stay high — aggressive trimming is actively
+        harmful in a corridor.
+
+        The reasoning that produced the original 0.80 was that a warehouse scan
+        has 10-20% of genuinely unshared points between frames, so discard the
+        worst fifth. That is wrong twice over. ``max_correspondence_distance``
+        is already the outlier gate and removes anything genuinely unmatched;
+        trimming on top of it discards *good* correspondences that merely have
+        larger residuals. In a 30 m aisle of parallel walls, the points with the
+        largest residuals are the racking uprights — the only features that
+        constrain motion ALONG the corridor. Everything else aligns equally well
+        at any position, so throwing away the uprights leaves ICP free to
+        collapse to identity.
+
+        Measured, unseeded, against a true motion of 0.10 m along the aisle:
+
+            trim 0.60 -> 0.099 m error   (reported zero motion)
+            trim 0.80 -> 0.045 m error   (lost half the motion)
+            trim 0.95 -> 0.006 m error
+            trim 1.00 -> 0.009 m error
+
+        0.95 rather than 1.00 keeps a little robustness against a single wild
+        correspondence dragging the least-squares solve, without discarding the
+        structure the solve depends on.
     min_points
         Below this the geometry is too weak to constrain three degrees of
         freedom and ``None`` is returned rather than a guess.

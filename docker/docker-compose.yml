@@ -62,6 +62,13 @@ services:
     <<: *common
     command: ["./scripts/run_evaluation.sh", "/ws/results"]
 
+  # Open-loop localisation harness: a fixed velocity profile with Nav2 out of
+  # the loop, so localisation can be measured without the recovery/slip
+  # feedback that makes a mission run circular.
+  openloop:
+    <<: *common
+    command: ["./scripts/run_openloop.sh", "/ws/results/openloop"]
+
   # Evaluation with induced failures, producing the recovery matrix.
   faults:
     <<: *common

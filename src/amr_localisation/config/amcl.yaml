@@ -19,25 +19,30 @@ amcl:
     scan_topic: /scan
 
     # -----------------------------------------------------------------
-    # Motion model.
-    #
-    # Differential drive. alpha1/alpha2 are rotation noise from rotation and
-    # from translation; alpha3/alpha4 are translation noise from translation and
-    # from rotation.
-    #
-    # alpha1 = 0.05: yaw error per unit yaw. Low, because the EKF's yaw is
-    #   constrained by both the gyro and the scan matcher.
-    # alpha2 = 0.05: yaw error per unit translation. Low for the same reason;
-    #   this is the term that captures a drive wheel slipping and turning the
-    #   robot without it knowing, which the scan matcher catches.
-    # alpha3 = 0.05: translation error per unit translation. This is the one the
-    #   encoders are genuinely good at.
-    # alpha4 = 0.05: translation error per unit rotation.
-    # alpha5 = 0.05: strafe noise, differential-drive only. Nominally zero for
-    #   a non-holonomic base but left small and non-zero, because a robot pushed
-    #   sideways by a pallet truck does exactly this and a zero here means the
-    #   filter cannot represent it at all.
+    # Motion model. Differential drive. alpha1/alpha2 are rotation noise from
+    # rotation and from translation; alpha3/alpha4 are translation noise from
+    # translation and from rotation; alpha5 is strafe, nominally zero for a
+    # non-holonomic base but left small so the filter can represent a robot
+    # shoved sideways by a pallet truck.
     # -----------------------------------------------------------------
+    # NARROW, and an attempt to widen them was measured and rejected.
+    #
+    # The open-loop harness showed AMCL tracking well in translation (under
+    # 1.5 degrees of yaw error, 0.06 m of position error over 20 s) and then
+    # breaking during the first in-place 180 degree turn, ending 60-70 degrees
+    # out and never recovering. The obvious reading was that the proposal
+    # distribution was too narrow for the laser to correct the filter, so
+    # alpha1/alpha2 were raised to 0.20, max_beams to 240 and gentle recovery
+    # injection re-enabled.
+    #
+    # That made it far worse: ATE went from 1.32 m to 12.47 m and yaw error from
+    # 51 to 131 degrees. A wide proposal in a corridor whose racking repeats
+    # every 2.7 m simply gives the filter more wrong hypotheses to find, and
+    # injected particles latch onto them. The narrow values are restored.
+    #
+    # Three parameters were changed at once, which is why the result only says
+    # "that combination is worse" and not which one did the damage. The rotation
+    # failure is therefore still open; see docs/localisation-accuracy.md.
     robot_model_type: "nav2_amcl::DifferentialMotionModel"
     alpha1: 0.05
     alpha2: 0.05
@@ -89,11 +94,13 @@ amcl:
     # nearer structure that actually discriminates between hypotheses.
     laser_max_range: 20.0
 
-    # 120 of the 720 beams, evenly subsampled. Adjacent beams in a 720-beam scan
+    # 240 of the 720 beams, evenly subsampled. Adjacent beams in a 720-beam scan
     # are highly correlated — they usually hit the same surface — so using all
-    # of them inflates confidence without adding information, and costs 6x the
-    # compute. 120 beams at 0.5 degree effective spacing still resolves a 0.1 m
-    # racking upright at 11 m.
+    # of them inflates confidence without adding information.
+    #
+    # 240 was tried alongside the wider alphas and the combination was much
+    # worse; 120 is restored with them. 120 beams at 0.5 degree effective
+    # spacing still resolves a 0.1 m racking upright at 11 m.
     max_beams: 120
 
     # -----------------------------------------------------------------
@@ -122,30 +129,30 @@ amcl:
     # the particle cloud, producing a confident pose with no new evidence behind
     # it.
     update_min_d: 0.20
-    update_min_a: 0.20
+    # 0.1 rad rather than 0.2. Rotation is where this filter was losing itself,
+    # and the update threshold sets how many chances the laser gets to correct
+    # it: at 0.2 rad a 180 degree turn allows about 16 updates, at 0.1 rad about
+    # 31. Halving it does not risk the collapse that motivates a threshold at
+    # all, because that comes from updating a STATIONARY robot, which is still
+    # excluded by update_min_d.
+    update_min_a: 0.10
 
     # -----------------------------------------------------------------
     # Recovery: random particle injection, DISABLED.
     #
-    # This was originally enabled at the textbook 0.001 / 0.1, on the reasoning
-    # that a filter locked onto the wrong racking bay sees good likelihood
-    # scores and never recovers unaided. That reasoning is sound; the setting
-    # was still wrong, and the simulation showed why.
+    # Enabled at the textbook 0.001 / 0.1 it fired during startup, before either
+    # average had converged, and threw the filter into a wall: 9.8 m^2 variance
+    # on the first published pose from a known start, diverging to 31 m^2 within
+    # six seconds.
     #
-    # Injection fires whenever the short-term average likelihood dips below the
-    # long-term one. Both averages start at zero, so the condition is met
-    # trivially during the first few updates — before the filter has converged
-    # at all. Measured: AMCL reported an x variance of 9.8 m^2 on its very first
-    # published pose from a known starting position, then diverged to
-    # (-14.88, 3.77) — inside a wall — with a variance of 31 m^2, six seconds
-    # into the run. Nav2 spent the rest of the mission in spin, back-up and wait
-    # recoveries before aborting.
+    # A gentler 0.001 / 0.02 was then tried, on the reasoning that a filter which
+    # locks onto a wrong hypothesis during a turn needs some way back. Measured
+    # alongside the wider alphas it was much worse, and both were reverted
+    # together. Injection remains off.
     #
-    # 0.0 / 0.0 disables it. The kidnapped-robot case is not left unhandled: it
-    # is dealt with explicitly through the /reinitialize_global_localization
-    # service, which the fault injector calls, and which is both controllable
-    # and observable rather than firing on its own during startup.
-    # -----------------------------------------------------------------
+    # The kidnapped-robot case is handled explicitly through
+    # /reinitialize_global_localization, which the fault injector calls, and
+    # which is controllable and observable rather than firing on its own.
     recovery_alpha_slow: 0.0
     recovery_alpha_fast: 0.0
 

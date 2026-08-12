@@ -78,9 +78,29 @@ ekf_filter_node:
     # ---------------------------------------------------------------------
     # odom0: wheel encoders, from the Gazebo differential drive plugin.
     #
-    # Velocities only (vx, vyaw), never absolute pose. Fusing wheel x/y/yaw
-    # would feed the filter an estimate that has already integrated all of its
-    # own past error, which double-counts and makes the covariance optimistic.
+    # POSE, fused DIFFERENTIALLY — not the twist. This looks like the wrong
+    # choice and is forced by a defect in the plugin.
+    #
+    # gazebo_ros_diff_drive's ENCODER odometry computes its reported forward
+    # velocity as
+    #     v = sqrt(dx*dx + dy*dy) / dt
+    # which is a magnitude and therefore never negative. The POSE it integrates
+    # internally is correctly signed; the TWIST it publishes is not. Fusing the
+    # twist means every reverse is integrated as a forward, and nothing
+    # anywhere reports an error.
+    #
+    # Measured on an open-loop profile that drives 3.5 m out and 3.5 m back:
+    # ground truth and the wheel POSE both returned to the start (net 1.2 m and
+    # 1.34 m), while the EKF ran monotonically forward to a net 11.7 m. Its path
+    # length was exactly right — it was integrating |v| — and its yaw was good
+    # to 5 degrees, which is what made it look like a position bug rather than a
+    # sign bug.
+    #
+    # Differential mode takes successive pose differences and fuses them as a
+    # velocity, so this is still velocity fusion — it just recovers the sign the
+    # twist threw away. The earlier objection to fusing wheel pose (that it
+    # double-counts already-integrated error and flatters the covariance)
+    # applies to fusing it ABSOLUTELY, which is not what differential mode does.
     # ---------------------------------------------------------------------
     odom0: /odom
     #             x      y      z
@@ -88,21 +108,22 @@ ekf_filter_node:
     #             vx     vy     vz
     #             vroll  vpitch vyaw
     #             ax     ay     az
-    odom0_config: [false, false, false,
-                   false, false, false,
-                   true,  false, false,
+    odom0_config: [true,  true,  false,
                    false, false, true,
+                   false, false, false,
+                   false, false, false,
                    false, false, false]
     odom0_queue_size: 10
-    odom0_differential: false
+    odom0_differential: true
     odom0_relative: false
     odom0_nodelay: true
 
     # ---------------------------------------------------------------------
     # imu0: MEMS IMU.
     #
-    # Yaw RATE and forward acceleration only. Absolute yaw is deliberately not
-    # fused, for two reasons. A gyro without a heading reference has no absolute
+    # Yaw RATE only. Neither absolute yaw nor linear acceleration is fused.
+    #
+    # Absolute yaw is excluded for two reasons. A gyro without a heading reference has no absolute
     # yaw to give — what it reports is its own integrated estimate, which is
     # already what the filter is computing. And the obvious reference, a
     # magnetometer, is useless in a building framed in steel with variable-speed
@@ -113,12 +134,30 @@ ekf_filter_node:
     # localisation numbers in docs/localisation-accuracy.md far better than
     # anything achievable on hardware, which would make them worthless.
     # ---------------------------------------------------------------------
+
+    # LINEAR ACCELERATION IS ALSO NOT FUSED, and that was a bug rather than a
+    # choice until an open-loop run exposed it. ax was enabled on the reasoning
+    # that more information is better. It is not: the simulated IMU carries a
+    # 0.1 m/s^2 accelerometer bias (deliberately, for realism) and
+    # robot_localization does not estimate accelerometer bias, so the filter
+    # integrated a constant 0.1 m/s^2 into velocity and then into position,
+    # unopposed.
+    #
+    # The measurement that caught it: the open-loop profile drives 3.5 m out and
+    # 3.5 m back, so true net displacement is 1.2 m. Wheel odometry reported
+    # 1.34 m. The EKF reported 11.6 m — it never came back, because the bias had
+    # become a phantom forward velocity. ATE 6.7 m against wheel odometry's
+    # 0.49 m: the filter was more than ten times worse than its own best input.
+    #
+    # A wheel encoder measures forward velocity directly and far better than a
+    # MEMS accelerometer can infer it. Angular velocity is what the IMU is here
+    # for.
     imu0: /imu/data
     imu0_config: [false, false, false,
                   false, false, false,
                   false, false, false,
                   false, false, true,
-                  true,  false, false]
+                  false, false, false]
     imu0_queue_size: 10
     imu0_differential: false
     imu0_relative: false

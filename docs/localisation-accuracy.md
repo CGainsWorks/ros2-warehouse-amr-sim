@@ -153,92 +153,116 @@ first attempt at 0.70 fitness rejected a correct 0.10 m match scoring 0.671;
 
 ---
 
-## Measured in simulation — and still not good enough
+## Measured in simulation
 
-The Gazebo evaluation runs end to end. The numbers say the stack does **not** yet
-localise acceptably, and they are published in full rather than withheld until
-they improve.
+### The evaluation had to be decoupled first
 
-Latest run, scan odometry enabled, 148 s and 14.5 m of ground-truth travel:
+A Nav2 mission cannot be used to tune localisation, because the two are
+coupled: a localisation error makes the costmap wrong, Nav2 fails to progress
+and runs recovery spins, the robot clips something, the wheels slip, and the
+slip corrupts the odometry localisation depends on. Every number moves for
+reasons unrelated to whatever is being tuned.
 
-| | value |
-|---|---|
-| AMCL ATE RMSE | 6.65 m |
-| AMCL yaw RMSE | 102.9° |
-| AMCL jumps > 0.5 m | 2 |
-| Wheel odometry ATE RMSE | 1.35 m |
-| Mission outcome | does not complete |
+The evidence that this was not hypothetical: wheel odometry "over-reported by
+276%", then 169%, then 56%, then 36% across successive mission runs. In the
+open-loop harness, with the same code and no Nav2, it over-reports by **0%**.
+None of those numbers were sensor faults. They were the robot pinned against a
+pallet or a rack face with its wheels turning.
 
-### Path length is the diagnostic, not ATE
+`scripts/run_openloop.sh` drives a fixed velocity profile with Nav2 out of the
+loop. Nothing reads any estimate, so the trajectory is identical run to run and
+the resulting ATE measures the estimator alone. Everything below comes from it.
 
-`analysis/odometry_audit.py` compares how far each source *thinks* the robot
-went. It localises a fault to one link in the chain in a way ATE cannot: a
-lagging estimate and a noisy one report similar ATE, but only one of them shows
-up as missing distance.
+### Where the chain stands
 
-| Source | Path | Net | vs truth |
-|---|---|---|---|
-| Ground truth | 14.54 m | 11.53 m | — |
-| Wheel odometry | 19.71 m | 10.46 m | +36% |
-| LiDAR scan odometry | 5.08 m | **0.10 m** | −65% |
-| EKF fused | 13.39 m | 5.37 m | −8% |
-| AMCL | 12.49 m | 4.30 m | −14% |
+12.4 m of travel, ~59 s, forward/reverse/in-place rotation/arcs:
 
-Two things fall straight out. Wheel odometry over-reports by 36%, which is slip
-during the recovery spins — exactly what the LiDAR is in the stack to correct,
-and it is correcting it: the EKF lands within 8% of truth where its wheel input
-is 36% over. And the scan matcher's own published pose has a **net displacement
-of 0.10 m** while the robot moved 11.5 m. It is damping the wheel slip usefully
-and tracking nothing.
+| Source | Path vs truth | ATE RMSE | ATE median | Yaw RMSE | NEES |
+|---|---|---|---|---|---|
+| Wheel odometry | −0% | 0.482 m | 0.020 m | 24.4° | — |
+| **EKF fused** | **−1%** | **0.157 m** | **0.012 m** | **3.91°** | **0.02, consistent** |
+| AMCL | +18% | 1.272 m | 1.403 m | 33.9° | 134, overconfident |
 
-### The startup seed lock — found, fixed
+The EKF is now the best estimator in the stack and the only one whose reported
+covariance is statistically honest. It started this session at 6.72 m.
 
-The first version of this run had the EKF at −34% instead of −8%. The cause was a
-race with a self-reinforcing lock:
+### Three bugs the harness found
 
-1. Scans arrive before the first `/odom` on every launch, so the first keyframe
-   was adopted with `_ref_odom = None`.
-2. `_initial_guess` therefore returned zero, permanently.
-3. Unseeded ICP down a corridor of parallel walls converges to *identity* with
-   near-perfect fitness — the walls align at any x, and the 80% trimming
-   discards the racking uprights, which are the only points that constrain
-   translation along the aisle, as outliers.
-4. Reported motion never reached the keyframe threshold, so the keyframe was
-   never re-taken, so `_ref_odom` stayed `None`.
+**1. The plugin's wheel twist has no sign.** `gazebo_ros_diff_drive` computes
+its ENCODER forward velocity as `sqrt(dx² + dy²)/dt` — a magnitude, never
+negative. The pose it integrates is correctly signed; the twist it publishes is
+not. The EKF fused the twist, so every reverse was integrated as a forward.
 
-The node published a pose pinned to the origin for 103 s while accepting 99% of
-its matches and reporting a 1% reject rate. Every health signal it had said it
-was fine.
+On a profile driving 3.5 m out and 3.5 m back, ground truth and the wheel pose
+both returned to the start (net 1.2 m, 1.34 m) while the EKF ran monotonically
+to a net 11.7 m — with a *perfectly correct path length*, because it was
+integrating |v|, and a good yaw. That combination is what made it look like a
+position bug rather than a sign bug. Fixed by fusing the pose differentially,
+which is still velocity fusion but keeps the sign. **EKF ATE 6.72 m → 0.157 m.**
 
-Two fixes: re-take the keyframe as soon as wheel odometry becomes available, and
-a `max_keyframe_age` backstop so that no fault which suppresses measured motion
-can freeze the reference indefinitely. Both have regression tests in
-`TestStartupSeedLock`.
+**2. Accelerometer bias integrated into position.** `ax` was fused on the
+reasoning that more information is better. The simulated IMU carries a
+0.1 m/s² bias by design and `robot_localization` does not estimate accelerometer
+bias, so the filter integrated a constant acceleration into velocity and then
+into position, unopposed. A wheel encoder measures forward velocity directly and
+far better. Now yaw rate only.
 
-### Outstanding, and honestly outstanding
+**3. Trimmed ICP is degenerate in a corridor.** Measured, unseeded, against a
+true 0.10 m motion along the aisle:
 
-1. **The scan matcher still does not track.** Net 0.10 m over 11.5 m even with
-   the seed restored. The corridor degeneracy in step 3 above is the likely
-   remaining cause and the trimming is the prime suspect: it removes precisely
-   the sparse points that constrain motion along a corridor. Worth testing with
-   `trim_ratio: 1.0`, or with a point-to-line metric which does not have this
-   failure mode.
-2. **AMCL diverges** (6.65 m ATE, 102.9° yaw). Downstream of (1) in part, but
-   not entirely.
-3. **No mission completes.** Capped at 400 s wall clock, and Gazebo runs at
-   roughly 0.3–0.5× real time here.
+| trim_ratio | error | |
+|---|---|---|
+| 0.60 | 0.099 m | reported zero motion |
+| 0.80 (shipped) | 0.045 m | lost half the motion |
+| 0.95 | 0.006 m | |
 
-### Why this is worth publishing
+`max_correspondence_distance` is already the outlier gate. Trimming beyond it
+discards good correspondences with large residuals, and in a corridor of
+parallel walls those are the racking uprights — the only features constraining
+motion along the aisle. Raised to 0.95.
 
-The offline benchmark reports the scan matcher cutting ATE by 82%. In
-simulation the same code, unchanged, tracked nothing at all. Both measurements
-are correct and only the second is the system.
+### An experiment that failed
 
-The benchmark seeds every match from accurate wheel odometry and scores the
-matcher's own poses on clean 10 Hz synthetic scans. It cannot see a startup race
-that never occurs in it, and it cannot see corridor degeneracy because the seed
-hides it. That is the argument for end-to-end evaluation over a green component
-benchmark, and it is why the ablation switch and the odometry audit exist.
+AMCL breaks specifically during in-place rotation: under 1.5° of yaw error and
+0.06 m of position error for the first 20 s, then it loses itself during the
+first 180° turn and sits 60–70° out for the rest of the run.
+
+The obvious reading is a proposal distribution too narrow for the laser to
+correct, so `alpha1`/`alpha2` were raised to 0.20, `max_beams` to 240 and gentle
+recovery injection re-enabled. **That made it far worse — ATE 1.32 m → 12.47 m,
+yaw 51° → 131°.** A wide proposal in a corridor whose racking repeats every
+2.7 m gives the filter more wrong hypotheses to find, and injected particles
+latch onto them. All three were reverted.
+
+Three parameters were changed at once, so the result only establishes that the
+combination is worse, not which one did the damage. That is a methodological
+failure worth naming rather than hiding.
+
+### Outstanding
+
+1. **AMCL's rotation failure is unresolved.** It is the weakest link in the
+   chain and the only estimator worse than its own input. Next step is to change
+   one parameter at a time against the open-loop harness, which now gives a
+   stable number to compare against.
+2. **The scan matcher does not track in the simulated corridor** (net 0.1 m over
+   11.5 m) despite working on the offline benchmark. It is now **disabled by
+   default**: with it fused the EKF loses 32% of the motion and scores 3.26 m,
+   without it 0.157 m. Shipping a component that measurably degrades the
+   estimate would be wrong; the switch remains for when it is fixed.
+3. **No mission completes.** With localisation fixed in open loop, a Nav2
+   mission still aborts: wheel odometry over-reports 108% in the mission and 0%
+   in open loop, which means the robot is still colliding. The residual AMCL
+   error is enough to put it where it does not think it is.
+
+### Why the offline benchmark did not catch any of this
+
+It reports the scan matcher cutting ATE by 63%, and in simulation the same code
+tracks nothing. Both are correct. The benchmark seeds every match from accurate
+wheel odometry and scores the matcher's own poses on clean synthetic scans; it
+cannot see a startup race that never occurs in it, corridor degeneracy that the
+seed hides, or a plugin's unsigned twist that it never touches.
+
+A component benchmark measures a component. Only the system measures the system.
 
 ## How to regenerate these
 

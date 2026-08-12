@@ -34,12 +34,16 @@ def generate_launch_description() -> LaunchDescription:
             ),
             DeclareLaunchArgument(
                 "use_scan_odometry",
-                default_value="true",
+                default_value="false",
                 description=(
                     "Run the LiDAR scan matcher and fuse it into the EKF. "
-                    "Setting this false leaves the EKF on wheel odometry and IMU "
-                    "alone, which is the ablation reported in "
-                    "docs/localisation-accuracy.md."
+                    "DEFAULT FALSE, on measured evidence: with it enabled the EKF "
+                    "reports 32% less motion than actually occurred and its ATE is "
+                    "3.26 m; with it disabled the EKF tracks to 0.157 m and its "
+                    "covariance is statistically consistent. The matcher works "
+                    "well on the offline benchmark and does not track in the "
+                    "simulated corridor; until that is resolved, fusing it makes "
+                    "the estimate worse. See docs/localisation-accuracy.md."
                 ),
             ),
             Node(
