@@ -73,8 +73,18 @@ class ScanRelay(Node):
             ),
         )
 
+        # Logged periodically, not only at shutdown. The relay is normally
+        # killed rather than asked to exit, so a shutdown-only summary is the
+        # one thing you never get to read -- which is exactly what happened the
+        # first time its throughput mattered.
+        self.create_timer(10.0, self._report)
+
         self.get_logger().info("scan_relay: %s -> %s (control %s)"
                                % (input_topic, output_topic, control_topic))
+
+    def _report(self) -> None:
+        self.get_logger().info("scan_relay: forwarded %d, dropped %d"
+                               % (self._forwarded, self._dropped))
 
     def _on_control(self, msg: Bool) -> None:
         if msg.data == self._blind:

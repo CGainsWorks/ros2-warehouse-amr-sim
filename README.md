@@ -147,6 +147,38 @@ length is within 0% of ground truth: **no slip anywhere in the run**. Earlier
 missions over-reported by 276%, 169%, 56% and 36%, every one of them a robot
 pinned against something with its wheels turning.
 
+### Recovery under induced failure
+
+Five faults, one mission each so no fault lands on a robot an earlier fault
+already broke. Full matrix in [recovery-matrix.md](docs/recovery-matrix.md).
+
+| Fault | AMCL peak | Resettled | Recoveries |
+|---|---|---|---|
+| `sensor_dropout` (LiDAR blind 4 s) | **0.07 m** | **0.3 s** | none needed |
+| `block_aisle` | 7.30 m | never | none |
+| `localisation_jump` (one bay, 2.7 m) | 10.27 m | never | none |
+| `kidnap` (5.4 m) | 13.24 m | never | none |
+| `relocalise` | — | — | spin, back_up, wait @ 5.7 s |
+
+The dropout is the clean pass: the EKF coasts through four seconds of no LiDAR
+on wheel odometry and IMU, and AMCL is back under 0.25 m within 0.3 s of the
+scans returning.
+
+The kidnap failure is **deliberate**. Random particle injection is disabled
+because enabling it made localisation six times worse in a map that repeats
+every 2.7 m; the trade is losing automatic kidnap recovery, which a warehouse
+AMR on a known floor rarely needs, to keep the localisation it needs every
+second. `relocalise` is the manual way back and is the only fault that exercised
+the recovery ladder.
+
+**The mission outcome column is not in that table on purpose.** Fault runs need
+a relay in the LiDAR path to induce the dropout, and a control run with the
+relay and *no fault* also fails — 222 s to abort, against 156 s to succeed
+without it. The relay alone loses the mission, so no mission outcome under fault
+injection is attributable to its fault. That is stated in the doc rather than
+quietly omitted, and it is why the relay is not in the path for any other run
+here.
+
 ### The decoupling that made this measurable
 
 A Nav2 mission cannot be used to tune localisation. A localisation error makes
@@ -184,7 +216,7 @@ outstanding work are in
 | **EKF** | `robot_localization` fusing wheel odometry and IMU yaw rate. Scan odometry is wired in and **off by default** — it degrades the estimate in simulation |
 | **Scan odometry** | keyframed trimmed ICP, written here rather than vendored |
 | **Nav2** | NavFn + DWB, every costmap and DWB parameter justified |
-| **Recovery** | a 5-step ladder, exercised by 5 induced failures |
+| **Recovery** | a 5-step ladder, exercised by 5 induced failures, one run each |
 | **Segmentation** | RANSAC ground removal with a seed band and normal constraint; range-adaptive Euclidean clustering |
 | **Zone occupancy** | 7 work zones, point-count based, asymmetric hysteresis |
 | **Evaluation** | ATE / RPE / NEES against Gazebo ground truth, a per-source path-length audit, and an open-loop harness that decouples localisation from navigation |

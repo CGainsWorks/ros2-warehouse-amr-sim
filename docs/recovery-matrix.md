@@ -108,15 +108,78 @@ had never run anyway because it sat behind the kidnap.
 
 ## Results
 
-Populate from `results/recovery_matrix.json` after running `make faults`.
+One run per fault, each injected at t = 25 s. `results/recovery_matrix.json`.
 
-| Fault | Injected at (s) | First recovery latency (s) | Recoveries invoked | Mission continued |
-|---|---|---|---|---|
-| `block_aisle` | 12 | — | — | — |
-| `localisation_jump` | 35 | — | — | — |
-| `kidnap` | 70 | — | — | — |
-| `relocalise` | 95 | — | — | — |
-| `sensor_dropout` | 120 | — | — | — |
+| Fault | Recovery latency | Recoveries invoked | AMCL peak error | Resettled | Mission\* |
+|---|---|---|---|---|---|
+| `block_aisle` | — | (none) | 7.30 m | never | timeout |
+| `localisation_jump` | — | (none) | 10.27 m | never | aborted |
+| `sensor_dropout` | — | (none) | **0.07 m** | **0.3 s** | timeout |
+| `kidnap` | — | (none) | 13.24 m | never | aborted |
+| `relocalise` | 5.7 s | spin, back_up, wait | no AMCL data | — | aborted |
+
+**AMCL peak** is the worst pose error against Gazebo ground truth in the 25 s
+after the fault; **resettled** is when it first comes back under 0.25 m.
+
+### \* The mission column is not attributable to the fault
+
+Fault runs put `scan_relay` in the LiDAR path so the dropout can be induced at
+all. A control run — **relay in the path, fault scheduled so far out that it
+never fires** — aborted at 222 s, where the same mission without the relay
+succeeds in 156 s.
+
+So the relay on its own is enough to lose the mission. Every mission outcome in
+the table above is confounded by it, and none of them can be read as "the fault
+did this". The recovery and AMCL columns are still attributable, because those
+are measured against the fault's own timestamp within a run.
+
+This is an unsatisfying place to leave it and it is where it is left. The
+suspected cause is that a Python node in a 10 Hz path on a machine already
+running Gazebo, Nav2 and the perception stack adds enough jitter to matter — the
+same starvation that made Nav2's bringup fail earlier in this work until
+perception was deferred. The fix is a C++ relay, or an induced dropout that does
+not need one. `scan_relay` now logs forwarded and dropped counts every 10 s so
+the next person has the throughput data; the first attempt logged only at
+shutdown, and the process is killed rather than asked to exit, so that number
+was never once printed.
+
+What the control does establish is that **the relay is not in the path for any
+other run in this repository**, which is why the localisation figures elsewhere
+are unaffected by it. That was a deliberate design choice and this result is the
+argument for it.
+
+### Reading the rest
+
+**`sensor_dropout` is the clean result.** Blinding the LiDAR for 4 s moved AMCL
+by 0.07 m and it was back under 0.25 m within 0.3 s of the scans returning. No
+recovery behaviour was needed. The EKF coasting on wheel odometry and IMU across
+a four-second gap is exactly what the fusion is there for, and it did it without
+the navigation stack noticing.
+
+**`kidnap` is a failure by design, and the trade is documented above.** A 13.24 m
+error that never resettles is what disabling random particle injection buys you.
+The alternative was measured: injection enabled made localisation roughly six
+times worse in normal driving.
+
+**`localisation_jump` should be read next to `kidnap`.** A 2.7 m pose error —
+exactly one racking bay — produced a 10.27 m peak that never resettled. The
+aliasing hazard this environment is built around is real: once the filter is
+convinced it is in the wrong bay, the scan agrees with it, and the run does not
+come back. `relocalise` is the only route out, which is what makes it the fifth
+fault rather than a curiosity.
+
+**`relocalise` is the one fault that provoked the recovery ladder**, at 5.7 s,
+and walked spin → back_up → wait in order. AMCL stopped publishing during it,
+which is why there is no error figure: the filter had scattered its particles
+and had not yet reconverged, and the robot stopped moving, so there were no
+updates to publish.
+
+**`block_aisle` needed a fix before it measured anything.** It teleports a
+0.8 m pallet into the aisle, and it did so at y = 0.0, dead centre — which
+leaves a zero-cost lane 0.06 m wide and is not a replanning test but an
+impassable-aisle test. It is now offset to y = 0.45, leaving 0.51 m. The 7.30 m
+AMCL peak that remains is not explained and is the first thing to look at if
+this work continues.
 
 ## How attribution works, and its limitation
 

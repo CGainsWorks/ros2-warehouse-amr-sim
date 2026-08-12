@@ -305,7 +305,7 @@ def format_isolated_report(matrix: dict) -> str:
         "another fault has already broken",
         "",
     ]
-    header = "%-20s %-10s %8s  %-26s %s" % ("fault", "mission", "latency", "recoveries invoked", "AMCL peak / resettled")
+    header = "%-20s %-10s %8s  %-26s %s" % ("fault", "mission*", "latency", "recoveries invoked", "AMCL peak / resettled")
     lines += [header, "-" * len(header)]
 
     for row in matrix["runs"]:
@@ -338,6 +338,13 @@ def format_isolated_report(matrix: dict) -> str:
         "  'AMCL peak' is the worst pose error against Gazebo ground truth in the",
         "  25 s after the fault; 'resettled' is when it first returns under 0.25 m.",
         "  A fault with no recovery and no error peak was absorbed upstream.",
+        "",
+        "  * The mission column is NOT attributable to the fault. Fault runs put a",
+        "    relay in the LiDAR path so the dropout can be induced, and a control",
+        "    run with the relay and no fault at all also failed: aborted at 222 s",
+        "    against 156 s to succeed without it. The relay alone is enough to",
+        "    lose the mission, so read the recovery and AMCL columns -- which are",
+        "    measured against the fault -- and not this one.",
     ]
     return "\n".join(lines)
 
