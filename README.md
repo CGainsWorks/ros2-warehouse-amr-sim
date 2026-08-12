@@ -105,6 +105,11 @@ is in the stack to cover.
 
 0.5% of matches rejected; 3.8 ms median per match.
 
+Both tables reproduce **identically** on Windows (Python 3.9, numpy 1.26,
+scipy 1.13) and WSL Ubuntu 22.04 (Python 3.10, numpy 1.21, scipy 1.8) — every
+stochastic step takes a fixed seed, so the pipeline is deterministic end to end.
+Latency differs, as it should; the slower machine's figures are the ones quoted.
+
 ### Not yet measured
 
 **AMCL and EKF accuracy against Gazebo ground truth has not been run.** The

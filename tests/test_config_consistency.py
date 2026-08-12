@@ -268,6 +268,51 @@ class TestLocalisation:
             encoding="utf-8"
         ).replace(" ", ""), "the Gazebo diff drive plugin must not also publish odom TF"
 
+    def test_ekf_base_frame_is_the_urdf_root(self):
+        """The EKF must publish odom -> the URDF's ROOT link.
+
+        Regression guard for a bug that cost a full simulation run. The URDF
+        roots at base_footprint and robot_state_publisher owns the fixed edge
+        base_footprint -> base_link. Setting the EKF's base_link_frame to
+        base_link makes it publish odom -> base_link as well, giving base_link
+        two parents. That is not a tree, so tf2 splits into two disconnected
+        components and every lookup spanning them fails.
+
+        What makes it worth a test is how badly the symptom misdirects: AMCL
+        complains it cannot connect base_footprint to lidar_2d_link, never
+        publishes map -> odom, the map frame ceases to exist, and the
+        perception nodes go silent. None of that points at a single wrong word
+        in ekf.yaml.
+        """
+        text = URDF.read_text(encoding="utf-8")
+        # The root is the link that is never a joint's child. Only the
+        # non-macro joints are visible without expanding xacro, which is
+        # sufficient: the root is always at the top level.
+        children = set(re.findall(r'<child\s+link="([^"]+)"', text))
+        parents = set(re.findall(r'<parent\s+link="([^"]+)"', text))
+        roots = parents - children
+        assert len(roots) == 1, "expected exactly one URDF root, found %s" % sorted(roots)
+        root = roots.pop()
+
+        ekf = _load_yaml(EKF_PARAMS)["ekf_filter_node"]["ros__parameters"]
+        assert ekf["base_link_frame"] == root, (
+            "EKF publishes odom -> %r but the URDF root is %r; %r would then have "
+            "two parents and the TF tree would split"
+            % (ekf["base_link_frame"], root, ekf["base_link_frame"])
+        )
+
+    def test_base_frame_agrees_across_ekf_amcl_and_gazebo(self):
+        """All three must name the same frame or the tree splits or drifts."""
+        ekf = _load_yaml(EKF_PARAMS)["ekf_filter_node"]["ros__parameters"]
+        amcl = _load_yaml(AMCL_PARAMS)["amcl"]["ros__parameters"]
+        gazebo = GAZEBO_XACRO.read_text(encoding="utf-8")
+        plugin_frame = re.search(r"<robot_base_frame>([^<]+)</robot_base_frame>", gazebo).group(1)
+
+        assert ekf["base_link_frame"] == amcl["base_frame_id"] == plugin_frame, (
+            "base frame disagrees: EKF=%r AMCL=%r gazebo plugin=%r"
+            % (ekf["base_link_frame"], amcl["base_frame_id"], plugin_frame)
+        )
+
     def test_ekf_is_two_d(self):
         ekf = _load_yaml(EKF_PARAMS)["ekf_filter_node"]["ros__parameters"]
         assert ekf["two_d_mode"] is True

@@ -11,10 +11,43 @@ map ──────────── AMCL ───────────�
  │ (from Cartographer)                │ 30 Hz, continuous, no jumps           │
 ```
 
-`map → odom` is AMCL's. `odom → base_link` is the EKF's. Nothing else publishes
-on either edge, and `tests/test_config_consistency.py` asserts it — including
-that the Gazebo differential-drive plugin has `publish_odom_tf` false, which is
-the easiest way to end up with two publishers fighting over one transform.
+`map → odom` is AMCL's. `odom → base_footprint` is the EKF's. Nothing else
+publishes on either edge, and `tests/test_config_consistency.py` asserts it —
+including that the Gazebo differential-drive plugin has `publish_odom_tf` false,
+which is the easiest way to end up with two publishers fighting over one
+transform.
+
+### The EKF must publish to the URDF *root*
+
+`base_footprint`, not `base_link`. This is one word in `ekf.yaml` and it cost a
+whole simulation run to find, so it is worth spelling out.
+
+The URDF roots at `base_footprint` and `robot_state_publisher` owns the fixed
+edge `base_footprint → base_link`. Point the EKF at `base_link` and it publishes
+`odom → base_link` as well, so `base_link` has two parents. That is not a tree:
+tf2 silently splits into two disconnected components and every lookup spanning
+them fails.
+
+What makes it expensive is that the symptom points nowhere near the cause. What
+you actually see is:
+
+* AMCL: `Could not find a connection between 'base_footprint' and
+  'lidar_2d_link' because they are not part of the same tree.`
+* `map` frame never appears at all, so anything asking for `map → base_footprint`
+  waits forever.
+* `/amcl_pose` never publishes.
+* The segmentation node goes silent — it drops every scan on a failed transform
+  lookup, exactly as designed, but the log line looks like a perception problem.
+
+Four subsystems appear broken; one word is wrong. The invariant is now asserted
+two ways: `test_ekf_base_frame_is_the_urdf_root` derives the root from the URDF
+and compares it, and `test_base_frame_agrees_across_ekf_amcl_and_gazebo` checks
+the EKF, AMCL and the Gazebo plugin all name the same frame.
+
+Worth noting what behaved *correctly* through all of this: the zone publisher
+kept publishing with `transform_valid: false` rather than reporting its zones
+clear. That is the designed failure mode working — it had lost the ability to
+place its zones and said so, instead of asserting the aisle was empty.
 
 The split matters because the two estimates have different jobs. The EKF gives a
 locally smooth, continuously differentiable pose that DWB can differentiate

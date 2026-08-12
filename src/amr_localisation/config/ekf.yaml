@@ -51,7 +51,27 @@ ekf_filter_node:
 
     map_frame: map
     odom_frame: odom
-    base_link_frame: base_link
+
+    # base_footprint, NOT base_link, and this is not cosmetic.
+    #
+    # The URDF roots at base_footprint and hangs base_link beneath it via a
+    # fixed joint, so robot_state_publisher already owns the edge
+    # base_footprint -> base_link. If the EKF also publishes odom -> base_link
+    # then base_link has two parents, which is not a tree: tf2 splits into two
+    # disconnected components and every lookup that spans them fails.
+    #
+    # The symptom is thoroughly misleading. AMCL reports "Could not find a
+    # connection between 'base_footprint' and 'lidar_2d_link' because they are
+    # not part of the same tree", never publishes map -> odom, and the map frame
+    # then does not exist at all — so it reads like a mapping or AMCL problem
+    # rather than a one-word frame mismatch here. The perception nodes go
+    # silent at the same time for the same reason.
+    #
+    # The rule: this must be the URDF's ROOT link, and it must match AMCL's
+    # base_frame_id and the Gazebo diff-drive plugin's robot_base_frame.
+    # tests/test_config_consistency.py asserts all three agree.
+    base_link_frame: base_footprint
+
     # Continuous, drift-prone, jump-free. See the note at the top.
     world_frame: odom
 

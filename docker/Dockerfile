@@ -69,7 +69,11 @@ ENV GAZEBO_MODEL_PATH=/usr/share/gazebo-11/models:${WORKSPACE}/simulation/models
 ENV GAZEBO_RESOURCE_PATH=/usr/share/gazebo-11:${WORKSPACE}/simulation
 
 COPY docker/entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+# The scripts are mode 100755 in git, but a checkout made on Windows can arrive
+# without the bit, and the compose services invoke them as ./scripts/foo.sh.
+# Setting it here costs nothing and turns a confusing "Permission denied" at
+# `docker compose run eval` into a non-event.
+RUN chmod +x /entrypoint.sh ${WORKSPACE}/scripts/*.sh
 
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["ros2", "launch", "amr_bringup", "simulation.launch.py", "headless:=true"]

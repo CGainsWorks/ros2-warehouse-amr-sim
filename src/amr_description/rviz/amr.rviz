@@ -1,0 +1,235 @@
+# RViz layout for the warehouse AMR demo.
+#
+# Ordered so the localisation story reads top to bottom: the static map, then
+# what the sensors see, then what perception made of it, then what Nav2 decided.
+#
+# The two perception clouds are deliberately both present and coloured
+# differently. Seeing the ground cloud is the fastest way to diagnose a bad
+# plane fit: if the floor turns up in "Obstacles" instead of "Ground", the
+# costmap is about to fill with phantom obstacles and the cause is visible at a
+# glance rather than through a topic echo.
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+    Property Tree Widget:
+      Expanded:
+        - /Global Options1
+        - /Perception1
+      Splitter Ratio: 0.5
+    Tree Height: 700
+  - Class: rviz_common/Views
+    Name: Views
+  - Class: rviz_common/Tool Properties
+    Name: Tool Properties
+
+Visualization Manager:
+  Class: ""
+  Name: root
+  Global Options:
+    Background Color: 48; 48; 48
+    Fixed Frame: map
+    Frame Rate: 30
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Name: Grid
+      Enabled: true
+      Cell Size: 1
+      Plane Cell Count: 40
+      Color: 90; 90; 90
+      Reference Frame: <Fixed Frame>
+
+    - Class: rviz_default_plugins/RobotModel
+      Name: Robot
+      Enabled: true
+      Description Source: Topic
+      Description Topic:
+        Value: /robot_description
+        Depth: 5
+        Durability Policy: Volatile
+        Reliability Policy: Reliable
+      Alpha: 1
+
+    - Class: rviz_default_plugins/TF
+      Name: TF
+      Enabled: false
+      Show Axes: true
+      Show Names: true
+      Marker Scale: 0.4
+
+    - Class: rviz_common/Group
+      Name: Localisation
+      Enabled: true
+      Displays:
+        - Class: rviz_default_plugins/Map
+          Name: Static map
+          Enabled: true
+          Topic:
+            Value: /map
+            Durability Policy: Transient Local
+            Reliability Policy: Reliable
+          Color Scheme: map
+          Alpha: 0.7
+
+        - Class: rviz_default_plugins/PoseWithCovariance
+          Name: AMCL pose
+          Enabled: true
+          Topic:
+            Value: /amcl_pose
+            Durability Policy: Volatile
+            Reliability Policy: Reliable
+          Covariance:
+            Position:
+              Alpha: 0.3
+              Color: 204; 51; 204
+            Value: true
+          Color: 255; 25; 0
+          Shape: Arrow
+
+        - Class: rviz_default_plugins/PoseArray
+          Name: Particle cloud
+          Enabled: true
+          Topic:
+            Value: /particle_cloud
+            Durability Policy: Volatile
+            Reliability Policy: Best Effort
+          Color: 0; 180; 255
+          Shape: Arrow (Flat)
+          Arrow Length: 0.15
+
+    - Class: rviz_common/Group
+      Name: Sensors
+      Enabled: true
+      Displays:
+        - Class: rviz_default_plugins/LaserScan
+          Name: 2D LiDAR
+          Enabled: true
+          Topic:
+            Value: /scan
+            Durability Policy: Volatile
+            Reliability Policy: Best Effort
+          Size (m): 0.03
+          Style: Spheres
+          Color: 255; 255; 100
+          Color Transformer: FlatColor
+
+    - Class: rviz_common/Group
+      Name: Perception
+      Enabled: true
+      Displays:
+        - Class: rviz_default_plugins/PointCloud2
+          Name: Ground
+          Enabled: true
+          Topic:
+            Value: /segmentation_node/ground
+            Durability Policy: Volatile
+            Reliability Policy: Best Effort
+          Size (m): 0.02
+          Style: Points
+          Color: 90; 110; 90
+          Color Transformer: FlatColor
+
+        - Class: rviz_default_plugins/PointCloud2
+          Name: Obstacles
+          Enabled: true
+          Topic:
+            Value: /segmentation_node/obstacles
+            Durability Policy: Volatile
+            Reliability Policy: Best Effort
+          Size (m): 0.04
+          Style: Flat Squares
+          Color Transformer: AxisColor
+          Axis: Z
+
+        - Class: rviz_default_plugins/MarkerArray
+          Name: Clusters
+          Enabled: true
+          Topic:
+            Value: /segmentation_node/markers
+            Durability Policy: Volatile
+            Reliability Policy: Reliable
+
+        - Class: rviz_default_plugins/MarkerArray
+          Name: Work zones
+          Enabled: true
+          Topic:
+            Value: /zone_occupancy_node/zone_markers
+            Durability Policy: Volatile
+            Reliability Policy: Reliable
+
+    - Class: rviz_common/Group
+      Name: Navigation
+      Enabled: true
+      Displays:
+        - Class: rviz_default_plugins/Map
+          Name: Global costmap
+          Enabled: false
+          Topic:
+            Value: /global_costmap/costmap
+            Durability Policy: Transient Local
+            Reliability Policy: Reliable
+          Color Scheme: costmap
+          Alpha: 0.5
+
+        - Class: rviz_default_plugins/Map
+          Name: Local costmap
+          Enabled: true
+          Topic:
+            Value: /local_costmap/costmap
+            Durability Policy: Transient Local
+            Reliability Policy: Reliable
+          Color Scheme: costmap
+          Alpha: 0.6
+
+        - Class: rviz_default_plugins/Path
+          Name: Global plan
+          Enabled: true
+          Topic:
+            Value: /plan
+            Durability Policy: Volatile
+            Reliability Policy: Reliable
+          Color: 0; 255; 0
+          Line Width: 0.04
+
+        - Class: rviz_default_plugins/Path
+          Name: Local plan
+          Enabled: true
+          Topic:
+            Value: /local_plan
+            Durability Policy: Volatile
+            Reliability Policy: Reliable
+          Color: 255; 120; 0
+          Line Width: 0.03
+
+  Tools:
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Select
+    - Class: rviz_default_plugins/SetInitialPose
+      Topic:
+        Value: /initialpose
+    - Class: rviz_default_plugins/SetGoal
+      Topic:
+        Value: /goal_pose
+
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Name: Current View
+      # Looking down the aisle from above the west end, which is where the
+      # robot spawns.
+      Distance: 24
+      Focal Point:
+        X: -6
+        Y: 0
+        Z: 0
+      Pitch: 0.9
+      Yaw: 0.1
+      Target Frame: <Fixed Frame>
+    Saved: ~
+
+Window Geometry:
+  Height: 900
+  Width: 1500
+  Displays:
+    collapsed: false
+  Views:
+    collapsed: false

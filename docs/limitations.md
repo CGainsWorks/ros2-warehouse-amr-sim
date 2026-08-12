@@ -125,6 +125,13 @@ reproduce. The cost is that no genuinely continuous dynamic motion is simulated.
 `gazebo_ros_ray_sensor`, `gazebo_ros_p3d` — are Classic. The Ignition equivalents
 have different names and parameters. This pins the stack to ROS 2 Humble.
 
+A ROS 2 Humble install is **not** sufficient on its own. A stock
+`ros-humble-desktop` does not pull in Gazebo, and the following are separate
+installs that this stack requires: `gazebo`, `ros-humble-gazebo-ros-pkgs`,
+`ros-humble-robot-localization`, `ros-humble-cartographer-ros` and
+`ros-humble-xacro`. `scripts/setup.sh` installs all of them; the Docker image
+is the supported path precisely because that list is easy to get wrong.
+
 **Simulated sensor noise is representative, not characterised.** 1 cm LiDAR
 range noise and the IMU noise densities are typical of the hardware class this
 targets; they are not measured from a specific unit. Numbers from this repository

@@ -10,8 +10,12 @@ package_name = "amr_bringup"
 # installed into this package's share directory so that launch files can find
 # them through FindPackageShare rather than by guessing at a source path that
 # does not exist in an installed workspace.
-REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-SIMULATION = os.path.join(REPO_ROOT, "simulation")
+#
+# The paths below MUST stay relative. setuptools asserts that every data_files
+# source is relative to setup.py, and an absolute path fails the build with
+# "'data_files' must be relative" — which is what happens if you reach for
+# os.path.abspath here, as the first version of this file did.
+SIMULATION = os.path.join("..", "..", "simulation")
 
 setup(
     name=package_name,

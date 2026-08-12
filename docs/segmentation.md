@@ -153,6 +153,32 @@ the first implementation missed the budget at ~200 ms per scan:
 
 ---
 
+## Reproducibility across platforms
+
+The accuracy figures above were produced on two different machines with
+substantially different library versions, and came out **identical**:
+
+| | Windows | WSL Ubuntu 22.04 |
+|---|---|---|
+| Python | 3.9.0 | 3.10.12 |
+| numpy / scipy | 1.26.4 / 1.13.1 | 1.21.5 / 1.8.0 |
+| Ground removal precision | 0.9608 | 0.9608 |
+| Objects recovered | 121 / 163 | 121 / 163 |
+| People recovered | 93.8% | 93.8% |
+| Spurious clusters | 0 | 0 |
+
+That is the payoff from seeding every stochastic step. The RANSAC ground fit
+takes a fixed seed by default, and the synthetic scan generator does too, so
+the pipeline is deterministic end to end — which is what makes a regression
+bisectable rather than a matter of opinion.
+
+Latency does differ, as it should: 21.2 ms median on WSL against 34.2 ms on the
+Windows machine. The figures quoted above are the slower of the two.
+
+`simulation/generate_world.py` also regenerates the world, zone definitions and
+reference map byte-identically on both, which is what lets CI assert the
+committed artefacts are current.
+
 ## Zone occupancy
 
 Seven zones: six pick faces and a charger bay, generated alongside the world so

@@ -75,6 +75,15 @@ locally the encoders are good. What ruins it is the systematic scale error and
 the two slips, which accumulate and never wash out. That is the specific problem
 the LiDAR covers.
 
+These figures reproduce to the quoted precision on both Windows (Python 3.9,
+numpy 1.26, scipy 1.13) and WSL Ubuntu 22.04 (Python 3.10, numpy 1.21,
+scipy 1.8): identical ATE, identical reject count, differing only in latency
+(3.1 ms median on WSL against 3.8 ms). Every stochastic step — the RANSAC seed,
+the synthetic scan noise, the wheel-odometry error model — takes a fixed seed,
+which is deliberate: segmentation output feeds a safety-adjacent zone publisher,
+and a non-deterministic front end makes any downstream regression impossible to
+bisect.
+
 ### Per-match accuracy
 
 From `tests/test_scan_matcher.py`, over 30 matched pairs at random poses along
