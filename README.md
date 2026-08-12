@@ -42,7 +42,7 @@ Two independent entry points. The first needs nothing but Python.
 
 ```bash
 # Reproduces every segmentation and scan-matching number below. ~15 seconds.
-pip install numpy scipy pyyaml pytest
+pip install -r requirements.txt
 make check
 ```
 
@@ -110,8 +110,11 @@ same code that scores a 63% improvement here tracks nothing at all in the
 simulated corridor, and the simulated result is the one that counts.
 
 Both tables reproduce **identically** on Windows (Python 3.9, numpy 1.26,
-scipy 1.13) and WSL Ubuntu 22.04 (Python 3.10, numpy 1.21, scipy 1.8) — every
-stochastic step takes a fixed seed, so the pipeline is deterministic end to end.
+scipy 1.13), WSL Ubuntu 22.04 (Python 3.10, numpy 1.21, scipy 1.8) and a clean
+`python:3.10-slim` container (numpy 2.2, scipy 1.15) — every stochastic step
+takes a fixed seed, so the pipeline is deterministic end to end. That span
+includes the numpy 1.x to 2.x boundary, which is why `requirements.txt` is
+unpinned: pinning would hide it if that ever stopped being true.
 Latency differs, as it should; the slower machine's figures are the ones quoted.
 
 ### End-to-end in Gazebo

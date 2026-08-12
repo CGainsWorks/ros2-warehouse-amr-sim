@@ -1,0 +1,16 @@
+# Everything the offline half of this repository needs: the unit tests, the
+# segmentation and scan-odometry benchmarks, and the analysis scripts. No ROS,
+# no simulator.
+#
+# Deliberately unpinned. The benchmarks reproduce identically on numpy 1.21 /
+# scipy 1.8 (WSL Ubuntu 22.04, Python 3.10) and numpy 1.26 / scipy 1.13
+# (Windows, Python 3.9), and pinning would hide it if that ever stopped being
+# true. Every stochastic step takes a fixed seed, which is what makes the
+# results version-independent rather than the versions making them so.
+numpy
+scipy
+pyyaml
+
+# Test and lint.
+pytest
+flake8

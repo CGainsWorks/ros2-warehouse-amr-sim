@@ -189,6 +189,44 @@ class TestLintConfiguration:
         assert "|| true" not in lint_body
 
 
+class TestOfflineDependencies:
+    """The offline half of this repository is what CI actually gates on, and it
+    has exactly one dependency list."""
+
+    def test_ci_installs_from_requirements(self):
+        """`cache: pip` in setup-python hashes **/requirements.txt. With no such
+        file anywhere in the tree it does not warn, it fails the job in a few
+        seconds, before any check has run -- which reads as "CI is broken" with
+        nothing in the log about linting or tests."""
+        requirements = REPO_ROOT / "requirements.txt"
+        assert requirements.exists(), "setup-python's pip cache needs this file"
+
+        workflow = (REPO_ROOT / ".github" / "workflows"
+                    / "ci.yml").read_text(encoding="utf-8")
+        assert "-r requirements.txt" in workflow
+
+    def test_requirements_covers_what_the_offline_checks_import(self):
+        """A missing entry here fails in CI as an ImportError two steps later."""
+        requirements = (REPO_ROOT / "requirements.txt").read_text(encoding="utf-8")
+        listed = {
+            line.split("=")[0].split(">")[0].split("<")[0].strip().lower()
+            for line in requirements.splitlines()
+            if line.strip() and not line.startswith("#")
+        }
+        for package in ("numpy", "scipy", "pyyaml", "pytest", "flake8"):
+            assert package in listed, "requirements.txt is missing %s" % package
+
+    def test_the_readme_quick_start_installs_the_same_things(self):
+        """The README told people to install a hand-written list that CI did not
+        use, so the two could drift without either being wrong on its own."""
+        readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+        for line in readme.splitlines():
+            if line.strip().startswith("pip install"):
+                assert "-r requirements.txt" in line, (
+                    "README pins its own dependency list: %s" % line.strip()
+                )
+
+
 class TestFaultInjection:
     """The fault harness is the only part of this repository whose job is to
     break the robot, so its own failure modes are quiet ones."""
