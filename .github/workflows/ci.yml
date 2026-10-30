@@ -11,20 +11,22 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # The offline job is the important one. It runs the real algorithms — RANSAC
-  # ground removal, Euclidean clustering, ICP scan matching, the error metrics —
-  # against the ray-traced warehouse scene, with no ROS and no simulator. It
-  # takes seconds and it reproduces every number the README quotes about
-  # segmentation and scan-matching accuracy.
+  # The offline job is the fast one. It runs the real algorithms (RANSAC
+  # ground removal, Euclidean clustering, ICP scan matching, the error
+  # metrics, the VDA 5050 order logic) against the ray-traced warehouse scene,
+  # with no ROS and no simulator. It reproduces every number the README quotes
+  # about segmentation and scan-matching accuracy, and checks the README's
+  # simulated localisation numbers against the committed results file.
   offline:
     name: Offline checks (no ROS)
     runs-on: ubuntu-22.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.10"  # matches ROS 2 Humble's Python
+          python-version: "3.12"  # matches ROS 2 Jazzy's Python on Ubuntu 24.04
           cache: pip
 
       - name: Install dependencies
@@ -39,12 +41,12 @@ jobs:
 
       - name: Lint
         # No flags: the settings live in .flake8, so this job and `make lint`
-        # cannot drift from it. They had drifted -- both passed
-        # --max-line-length=110 over a config file that says 120, so this step
-        # was failing on 24 pre-existing lines while `make lint` reported success,
-        # because it passed the same override and ended in `|| true`.
+        # cannot drift from it.
         run: flake8 src/ analysis/ tests/ simulation/
       - name: Unit tests
+        # Includes tests/test_results_reference.py, which fails if a number the
+        # README quotes for the simulated runs disagrees with
+        # results/reference/gazebo_localisation.json.
         run: python -m pytest tests/ -q
 
       - name: Generated files are up to date
@@ -72,18 +74,45 @@ jobs:
           path: results/
           retention-days: 30
 
-  # Verifies the ROS packages build and the launch files parse. It does not run
-  # Gazebo: a headless simulation in CI is slow, flaky on shared runners, and
-  # would test the runner's graphics stack as much as this code. The end-to-end
-  # localisation numbers come from `make eval` on a real machine, and
-  # docs/localisation-accuracy.md says so.
-  build:
-    name: colcon build (ROS 2 Humble)
-    runs-on: ubuntu-22.04
+  # The simulated job. Builds the workspace on ROS 2 Jazzy, then runs the two
+  # headless launch_testing integration tests against gz-sim Harmonic:
+  #
+  #   navigation_recovery  localise against the committed map, drive to a
+  #                        goal, survive a pallet set down on it (a recovery
+  #                        must run), finish on the goal by ground truth
+  #   vda5050_order        a VDA 5050 order over MQTT (Mosquitto), driven to
+  #                        completion and reported as such on the state topic
+  #
+  # Both LiDARs are gpu_lidar sensors and render through ogre2. The runner has
+  # no GPU, so they render on the CPU with Mesa's llvmpipe through EGL
+  # (--headless-rendering); nothing here needs a display.
+  sim:
+    name: Jazzy + gz-sim Harmonic (build, integration tests)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
     container:
-      image: ros:humble-ros-base-jammy
+      image: ros:jazzy-ros-base-noble
+    env:
+      # Keep ROS discovery and gz-transport on loopback, and use Cyclone DDS;
+      # see docs/simulation.md for why each one matters.
+      ROS_AUTOMATIC_DISCOVERY_RANGE: LOCALHOST
+      RMW_IMPLEMENTATION: rmw_cyclonedds_cpp
+      GZ_IP: 127.0.0.1
+      GZ_PARTITION: ci
     steps:
       - uses: actions/checkout@v4
+
+      - name: Keep downloaded packages for the cache
+        # The ROS images delete .debs after every install; the cache below
+        # needs them kept.
+        run: rm -f /etc/apt/apt.conf.d/docker-clean
+
+      - name: Cache apt packages
+        uses: actions/cache@v4
+        with:
+          path: /var/cache/apt/archives
+          key: apt-jazzy-${{ hashFiles('.github/workflows/ci.yml', 'src/*/package.xml') }}
+          restore-keys: apt-jazzy-
 
       - name: Install dependencies
         shell: bash
@@ -91,26 +120,30 @@ jobs:
           apt-get update
           apt-get install -y --no-install-recommends \
             python3-colcon-common-extensions python3-rosdep \
-            python3-numpy python3-scipy python3-yaml \
-            ros-humble-navigation2 ros-humble-nav2-bringup \
-            ros-humble-robot-localization \
-            ros-humble-cartographer-ros \
-            ros-humble-gazebo-ros-pkgs \
-            ros-humble-xacro
-          rosdep update --rosdistro humble
-          rosdep install --from-paths src --ignore-src -y --rosdistro humble \
-            --skip-keys "gazebo libgazebo-dev" || true
+            python3-numpy python3-scipy python3-yaml python3-pytest python3-paho-mqtt \
+            mosquitto \
+            ros-jazzy-ros-gz ros-jazzy-tf2 ros-jazzy-tf2-ros \
+            ros-jazzy-navigation2 ros-jazzy-nav2-bringup \
+            ros-jazzy-robot-localization \
+            ros-jazzy-cartographer-ros \
+            ros-jazzy-rmw-cyclonedds-cpp \
+            ros-jazzy-launch-testing ros-jazzy-launch-testing-ros \
+            ros-jazzy-xacro
+          rosdep update --rosdistro jazzy
+          rosdep install --from-paths src --ignore-src -y --rosdistro jazzy
+          # tf2 0.36.22 deadlocks AMCL and the costmaps (fixed in 0.36.23).
+          dpkg --compare-versions "$(dpkg-query -W -f='${Version}' ros-jazzy-tf2)" ge 0.36.23
 
       - name: Build
         shell: bash
         run: |
-          source /opt/ros/humble/setup.bash
+          source /opt/ros/jazzy/setup.bash
           colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
 
       - name: Xacro expands to valid URDF
         shell: bash
         run: |
-          source /opt/ros/humble/setup.bash
+          source /opt/ros/jazzy/setup.bash
           source install/setup.bash
           xacro src/amr_description/urdf/amr.urdf.xacro > /tmp/amr.urdf
           python3 -c "import xml.etree.ElementTree as ET; ET.parse('/tmp/amr.urdf')"
@@ -121,9 +154,9 @@ jobs:
         # Catches the common failure of a launch file that only breaks at
         # runtime because of a typo'd substitution or a missing import.
         run: |
-          source /opt/ros/humble/setup.bash
+          source /opt/ros/jazzy/setup.bash
           source install/setup.bash
-          for f in $(find src -name '*.launch.py'); do
+          for f in $(find src -name '*.launch.py' -not -path '*/test/*'); do
             echo "checking $f"
             python3 -c "
           import importlib.util, sys
@@ -134,3 +167,18 @@ jobs:
           mod.generate_launch_description()
           "
           done
+
+      - name: Integration tests (headless gz-sim)
+        shell: bash
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          source install/setup.bash
+          ./scripts/run_integration_tests.sh results/integration
+
+      - name: Upload integration results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-results
+          path: results/integration/
+          retention-days: 30
