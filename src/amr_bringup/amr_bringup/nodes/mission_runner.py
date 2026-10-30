@@ -1,8 +1,19 @@
 """Drive a sequence of pick faces and record what happened.
 
-Sends the waypoint list to Nav2's ``NavigateThroughPoses`` action, watches the
-behaviour tree log for recovery activity, and writes a JSON mission record that
+Sends the waypoints to Nav2's ``navigate_to_pose`` action one at a time,
+dwelling at each one as a robot would at a pick face, watches the behaviour
+tree log for recovery activity, and writes a JSON mission record that
 ``analysis/recovery_matrix.py`` turns into the recovery behaviour matrix.
+
+One goal at a time, not ``NavigateThroughPoses``. The mission reverses
+direction at the east end of the aisle, and handed as one path that is a
+U-turn: the outbound and return legs lie on top of each other inside DWB's
+local window, so the end of the transformed plan is on the return leg while
+the robot is still outbound. Measured on gz-sim, the robot reached x = 9.6,
+two metres short of the turn, and drove in circles until the mission aborted;
+the same legs sent as separate goals both succeed. Separate goals are also
+what the waypoint file describes: the robot stops at each pick face, and the
+one reversal happens while it is stationary.
 
 Recovery events are taken from ``/behavior_tree_log`` rather than inferred from
 robot motion. Inferring "it must have been recovering because it stopped" is
@@ -23,7 +34,7 @@ from action_msgs.msg import GoalStatus
 from geometry_msgs.msg import PoseStamped
 from lifecycle_msgs.msg import State
 from lifecycle_msgs.srv import GetState
-from nav2_msgs.action import NavigateThroughPoses
+from nav2_msgs.action import NavigateToPose
 from nav2_msgs.msg import BehaviorTreeLog
 from rcl_interfaces.msg import ParameterDescriptor
 from rclpy.action import ActionClient
@@ -58,6 +69,11 @@ class MissionRunner(Node):
             300.0,
             ParameterDescriptor(description="Abort the mission after this long."),
         )
+        self.declare_parameter(
+            "dwell_sec",
+            2.0,
+            ParameterDescriptor(description="Pause at each waypoint, as at a pick face."),
+        )
 
         path = str(self.get_parameter("waypoints_file").value)
         if not path:
@@ -71,7 +87,7 @@ class MissionRunner(Node):
         self._result: Optional[dict] = None
 
         self.create_subscription(BehaviorTreeLog, "/behavior_tree_log", self._on_bt_log, 20)
-        self._client = ActionClient(self, NavigateThroughPoses, "navigate_through_poses")
+        self._client = ActionClient(self, NavigateToPose, "navigate_to_pose")
         # On Jazzy the action server exists as soon as bt_navigator is
         # configured, and rejects every goal until it is activated. A mission
         # sent in that window is rejected in under a second, so the runner
@@ -81,9 +97,12 @@ class MissionRunner(Node):
         self._state_pending = False
 
         self._start_time = self._now()
-        self.create_timer(1.0, self._tick)
+        self.create_timer(0.5, self._tick)
         self._sent = False
         self._goal_handle = None
+        self._index = 0
+        self._reached: List[float] = []
+        self._dwell_until: Optional[float] = None
 
     # ------------------------------------------------------------------
     def _now(self) -> float:
@@ -136,17 +155,17 @@ class MissionRunner(Node):
                 self._poll_navigator()
                 return
             if not self._client.wait_for_server(timeout_sec=1.0):
-                self.get_logger().info("waiting for navigate_through_poses action server")
+                self.get_logger().info("waiting for navigate_to_pose action server")
                 return
-            goal = NavigateThroughPoses.Goal()
-            goal.poses = self._waypoints
-            self._client.send_goal_async(goal, feedback_callback=self._on_feedback).add_done_callback(
-                self._on_goal_response
-            )
             self._sent = True
             self._start_time = self._now()
-            self.get_logger().info("mission sent: %d waypoints" % len(self._waypoints))
+            self.get_logger().info("mission started: %d waypoints" % len(self._waypoints))
+            self._send_next()
             return
+
+        if self._dwell_until is not None and self._now() >= self._dwell_until:
+            self._dwell_until = None
+            self._send_next()
 
         elapsed = self._now() - self._start_time
         if self._result is None and elapsed > float(self.get_parameter("timeout_sec").value):
@@ -169,6 +188,17 @@ class MissionRunner(Node):
             self._navigator_active = True
             self.get_logger().info("bt_navigator is active")
 
+    def _send_next(self) -> None:
+        goal = NavigateToPose.Goal()
+        goal.pose = self._waypoints[self._index]
+        goal.pose.header.stamp = self.get_clock().now().to_msg()
+        self._client.send_goal_async(goal, feedback_callback=self._on_feedback).add_done_callback(
+            self._on_goal_response
+        )
+        p = goal.pose.pose.position
+        self.get_logger().info("waypoint %d/%d: (%.2f, %.2f)"
+                               % (self._index + 1, len(self._waypoints), p.x, p.y))
+
     def _on_feedback(self, feedback) -> None:
         self._feedback_samples += 1
 
@@ -183,8 +213,15 @@ class MissionRunner(Node):
 
     def _on_result(self, future) -> None:
         status = future.result().status
+        if status == GoalStatus.STATUS_SUCCEEDED:
+            self._reached.append(self._now() - self._start_time)
+            self._index += 1
+            if self._index >= len(self._waypoints):
+                self._finish("succeeded", self._now() - self._start_time)
+                return
+            self._dwell_until = self._now() + float(self.get_parameter("dwell_sec").value)
+            return
         outcome = {
-            GoalStatus.STATUS_SUCCEEDED: "succeeded",
             GoalStatus.STATUS_ABORTED: "aborted",
             GoalStatus.STATUS_CANCELED: "canceled",
         }.get(status, "unknown(%d)" % status)
@@ -197,13 +234,16 @@ class MissionRunner(Node):
             "outcome": outcome,
             "duration_s": elapsed,
             "waypoints": len(self._waypoints),
+            "waypoints_reached": len(self._reached),
+            "waypoint_times_s": self._reached,
             "recovery_counts": dict(self._recovery_counts),
             "recovery_events": self._events,
             "feedback_samples": self._feedback_samples,
         }
         out_path = Path(str(self.get_parameter("output").value))
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_text(json.dumps(self._result, indent=2), encoding="utf-8")
+        with open(out_path, "w", encoding="utf-8", newline="\n") as handle:
+            json.dump(self._result, handle, indent=2)
 
         self.get_logger().info(
             "mission %s in %.1f s; recoveries: %s"
