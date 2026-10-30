@@ -18,9 +18,11 @@ venv/
 htmlcov/
 
 # Generated run artefacts. Everything under results/ is reproducible from
-# `make eval`, so it is deliberately not tracked. Committed reference numbers
-# live in docs/ instead.
-results/
+# `make eval`, so it is not tracked, with one exception: results/reference/
+# holds the compact summary of the recorded simulated runs that the README
+# quotes, and CI checks the README against it (tests/test_results_reference.py).
+results/*
+!results/reference/
 *.bag
 *.db3
 *.mcap

@@ -7,15 +7,15 @@ Everything else follows from this, so it comes first.
 ```
 map ──────────── AMCL ────────────► odom ──── robot_localization EKF ───► base_link ──► base_footprint
  │                                    │                                       │
- │ static map                         │ wheel odom + IMU + scan odom          │ fixed joints
+ │ static map                         │ wheel odom + IMU (scan odom: off)     │ fixed joints
  │ (from Cartographer)                │ 30 Hz, continuous, no jumps           │
 ```
 
 `map → odom` is AMCL's. `odom → base_footprint` is the EKF's. Nothing else
 publishes on either edge, and `tests/test_config_consistency.py` asserts it —
-including that the Gazebo differential-drive plugin has `publish_odom_tf` false,
-which is the easiest way to end up with two publishers fighting over one
-transform.
+including that the transform gz-sim's DiffDrive system always publishes goes
+to a gz topic the bridge does not carry, which is the easiest way to end up
+with two publishers fighting over one transform.
 
 ### The EKF must publish to the URDF *root*
 
@@ -42,7 +42,7 @@ you actually see is:
 Four subsystems appear broken; one word is wrong. The invariant is now asserted
 two ways: `test_ekf_base_frame_is_the_urdf_root` derives the root from the URDF
 and compares it, and `test_base_frame_agrees_across_ekf_amcl_and_gazebo` checks
-the EKF, AMCL and the Gazebo plugin all name the same frame.
+the EKF, AMCL and the gz-sim DiffDrive system all name the same frame.
 
 Worth noting what behaved *correctly* through all of this: the zone publisher
 kept publishing with `transform_valid: false` rather than reporting its zones
@@ -58,8 +58,8 @@ discontinuity every time the particle filter resamples.
 ## Data flow
 
 ```
-                 ┌──────────────────────────── Gazebo ───────────────────────────┐
-                 │  2D LiDAR    3D LiDAR    IMU    wheel encoders    p3d truth   │
+                 ┌───────────── gz-sim Harmonic, through ros_gz_bridge ──────────┐
+                 │  2D LiDAR    3D LiDAR    IMU    wheel encoders    truth       │
                  └──────┬──────────┬─────────┬───────────┬────────────────┬──────┘
                         │          │         │           │                │
               /scan ────┤          │  /imu/data     /odom │                │ /ground_truth/pose
@@ -68,7 +68,8 @@ discontinuity every time the particle filter resamples.
         │               │          │         │           │                │
         ▼               ▼          │         │           │                ▼
    scan_odometry    segmentation   │         │           │           pose_logger
-    (ICP, 10 Hz)     (10 Hz)       │         │           │          (evaluation only)
+    (ICP, off by     (10 Hz)       │         │           │          (evaluation only)
+     default)                      │         │           │
         │               │          │         │           │
         │ /scan_odom    │ /obstacles          │           │
         │               │          │         │           │
@@ -84,9 +85,10 @@ discontinuity every time the particle filter resamples.
    ┌──────────────────────────────────────────────────────────┐
    │  Nav2: global costmap → NavFn → DWB → velocity smoother   │
    └──────────────────────────────────────────────────────────┘
-                          │ /cmd_vel
-                          ▼
-                       Gazebo
+                          │ /cmd_vel                ▲ navigate_to_pose
+                          ▼                         │
+                        gz-sim              vda5050_adapter ◄──MQTT──► master control
+                                                                     (uagv/v2/.../order, state)
 
    segmentation ──/obstacles──► zone_occupancy ──► /zones (per-zone booleans)
                 └──/obstacles──► local costmap obstacle layer
@@ -101,11 +103,12 @@ at runtime. See [limitations.md](limitations.md).
 |---|---|---|
 | `amr_common` | ament_python | Quaternion and SE(2) helpers. No ROS imports. |
 | `amr_msgs` | ament_cmake | `DetectedObject[Array]`, `ZoneOccupancy[Array]`. |
-| `amr_description` | ament_cmake | URDF/xacro, Gazebo plugins, RViz config. |
+| `amr_description` | ament_cmake | URDF/xacro, gz-sim systems and sensors, RViz config. |
 | `amr_localisation` | ament_python | Cartographer, AMCL, EKF config; ICP scan odometry. |
 | `amr_navigation` | ament_cmake | Nav2 params, behaviour trees. |
 | `amr_perception` | ament_python | Ground removal, clustering, zones, occupancy. |
-| `amr_bringup` | ament_python | Launch, mission runner, pose logger, fault injector. |
+| `amr_bringup` | ament_python | Launch, gz bridge config, mission runner, pose logger, fault injector, odometry covariance, integration test. |
+| `amr_fleet` | ament_python | VDA 5050 order and state logic (no ROS imports) and the MQTT adapter. |
 
 ### Two deviations from the layout in the brief
 
@@ -133,7 +136,7 @@ This is a hard rule, not a stylistic preference, and it is what makes the rest o
 the repository possible:
 
 * The whole segmentation and scan-matching stack is unit tested on a laptop with
-  numpy and scipy and nothing else — 197 tests in under four seconds.
+  numpy and scipy and nothing else: 267 tests in a few seconds.
 * CI runs the real algorithms rather than a mock of them.
 * `analysis/scan_odometry_benchmark.py` measures the *shipped* `ScanOdometry`
   class, not a reimplementation of it. A benchmark that reimplements what it
@@ -155,7 +158,7 @@ a 10 Hz budget.
 
 **A hand-written ICP rather than a scan-matching package.** The two obvious
 candidates, `rf2o_laser_odometry` and `scan_tools/laser_scan_matcher`, are both
-source-only on Humble. Vendoring a build of either to obtain roughly 150 lines of
+source-only on Humble, where this stack was first built. Vendoring a build of either to obtain roughly 150 lines of
 arithmetic is a poor trade, and a self-contained implementation can be measured
 for accuracy directly — which is what found a real bug (see
 [localisation-accuracy.md](localisation-accuracy.md)).

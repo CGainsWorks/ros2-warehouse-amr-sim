@@ -17,7 +17,7 @@ change that breaks one fails the test suite rather than the robot.
 | Circumscribed radius | 0.445 m | √(0.35² + 0.275²) |
 | Wheel radius | 0.10 m | URDF |
 | Wheel separation | 0.50 m | URDF |
-| Max wheel acceleration | 10 rad/s² | Gazebo diff drive plugin |
+| Max linear acceleration | 1.0 m/s² (10 rad/s² at the wheel) | gz-sim DiffDrive system |
 | Aisle clear width | 2.80 m | racking faces at y = ±1.40 |
 | Racking bay pitch | 2.70 m | repeats for ~27 m |
 | Map resolution | 0.05 m | Cartographer submap resolution |
@@ -322,6 +322,18 @@ the corners, and the corners are what hit the racking.
 The pick positions have real tolerance. Demanding centimetre accuracy from a
 differential base makes it hunt around the goal without improving anything
 downstream.
+
+### DWB `xy_goal_tolerance: 0.15`, inside the goal checker's 0.20
+
+The `RotateToGoal` critic stops scoring translation once the robot is inside
+its own radius, which it reads from `FollowPath.xy_goal_tolerance`, not from a
+`RotateToGoal.*` key like every other critic parameter. This file used to set
+`RotateToGoal.xy_goal_tolerance: 0.20`, which nothing read, so the critic ran
+on its 0.25 m default. Between 0.25 m and 0.20 m DWB rejected every forward
+trajectory and the goal checker never succeeded; on gz-sim the robot stopped
+0.24 m short of every goal. 0.15 m ends translation inside the goal checker's
+radius with margin. `tests/test_config_consistency.py` pins both the key and
+the ordering.
 
 ### `failure_tolerance: 3.0`, `required_movement_radius: 0.5` over 10 s
 

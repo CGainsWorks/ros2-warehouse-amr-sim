@@ -8,22 +8,52 @@ and are recorded here rather than hidden.
 Everything in this repository has now been executed. The figures in the docs
 come from runs, not from review.
 
-* **Offline, no ROS** — 197 unit tests, the segmentation benchmark and the
+* **Offline, no ROS**: 267 unit tests, the segmentation benchmark and the
   scan-odometry benchmark. Reproduce identically on Windows and WSL.
-* **Gazebo** — mapping, the full six-waypoint mission, the open-loop
-  localisation harness, and five fault-injection runs.
+* **gz-sim Harmonic on ROS 2 Jazzy**, the current simulator: the open-loop
+  localisation harness and the full six-waypoint mission (recorded in
+  `results/reference/gazebo_localisation.json`), and two headless integration
+  tests that CI runs on every push (a mission with an induced failure, and a
+  VDA 5050 order over MQTT).
+* **Gazebo Classic 11 on ROS 2 Humble**, before the October 2026 migration:
+  mapping, the mission, the open-loop harness and five fault-injection runs.
+  Those figures are kept in [localisation-accuracy.md](localisation-accuracy.md)
+  and [recovery-matrix.md](recovery-matrix.md) as the history they are, and
+  are labelled as Classic wherever they appear.
 
 What is still missing:
 
 **No demo GIF or video.** Every claim is a number in a JSON file rather than
 something you can watch.
 
-**One machine, one simulator build.** ROS 2 Humble and Gazebo Classic 11 in the
-supplied Docker image, on one laptop. Gazebo's ODE solver is not deterministic
-across machines, and the contact-heavy moments — the pallet nudge, the recovery
-reversals — are exactly where that shows. Expect the mission to complete and the
-localisation figures to land in the same range; do not expect them to match to
-three decimals.
+**Recorded on one machine.** The reference runs are from ROS 2 Jazzy and
+gz-sim 8 in the supplied Docker image on one laptop, and the integration tests
+run on GitHub's hosted runners. Physics and rendering timing are not
+deterministic across machines, so expect the mission to complete and the
+localisation figures to land in the same range, not to match to three decimals.
+CI therefore asserts bounds on its own runs and checks the README against the
+recorded file, rather than diffing numbers.
+
+**Not rerun on gz-sim yet: mapping and the five-fault recovery matrix.** `make
+map` and `make faults` have been ported (the fault injector now teleports a
+dynamic prop through gz-sim's `set_pose`) but have not been rerun since the
+migration, so the recovery matrix in [recovery-matrix.md](recovery-matrix.md)
+is a Gazebo Classic result. The recovery behaviour that *is* exercised on gz-sim
+is the one in the CI integration test.
+
+**Wheel odometry is near-ideal on gz-sim.** DART's wheel contact does not slip
+in these manoeuvres, so wheel odometry tracks ground truth to millimetres over
+the open-loop profile, where Classic's ODE contact drifted by 0.48 m. That makes
+the EKF's job trivially easy and leaves AMCL as the largest error source in the
+stack, which is not what a real floor would show. A deliberate encoder error
+model (scale error and slip events, as the offline scan-odometry benchmark
+already uses) is the honest fix and has not been added.
+
+**AMCL trails the robot by about 0.1 m on gz-sim.** Measured in the open-loop
+harness and the mission: AMCL's estimate sits behind ground truth in the
+direction of travel. It is not LiDAR latency (the scan content matches ground
+truth at the scan's own timestamp to within noise), and it is within the bounds
+the integration test asserts, but the cause has not been found.
 
 **Scan odometry ships disabled.** It is wired into the EKF and off by default,
 because it degrades the estimate in simulation while improving it by 63% on the
@@ -118,9 +148,17 @@ inflation boundary. Accepted deliberately; the reasoning is in
 **No dynamic obstacle prediction.** DWB plans against the costmap as it is now.
 A person walking across the aisle is avoided reactively, not anticipated.
 
-**Single robot.** No fleet coordination, no traffic management, no deadlock
+**Single robot.** The VDA 5050 adapter lets a master control dispatch this
+robot (see [fleet-interface.md](fleet-interface.md)), but there is one robot in
+the simulation and no fleet manager here: no traffic management and no deadlock
 resolution for two AMRs meeting in a 2.8 m aisle. The charger-bay zone exists
 partly to make the shape of that problem visible, but nothing acts on it.
+
+**The VDA 5050 adapter is a subset.** Single orders through released nodes,
+horizon reporting, `cancelOrder` and the full state message. Node and edge
+actions, order updates, the factsheet and visualisation topics are not
+implemented and are refused with a VDA error rather than ignored. The battery is
+not simulated and is reported as a labelled constant.
 
 ## Simulation
 
@@ -132,20 +170,23 @@ labelled as such in its own YAML header. `make map` produces the real
 Cartographer map, which will differ by Cartographer's error — comparing them is
 the point.
 
-**People are static cylinders teleported on a schedule.** A `<plugin>`-driven
-walker would move unrepeatably and make the recovery matrix impossible to
-reproduce. The cost is that no genuinely continuous dynamic motion is simulated.
+**People are static cylinders.** A `<plugin>`-driven walker would move
+unrepeatably and make the recovery matrix impossible to reproduce. The cost is
+that no genuinely continuous dynamic motion is simulated. On gz-sim a static
+model cannot be teleported (its collision and visual do not follow
+`set_pose`), so faults move a dynamic pallet instead; see
+[simulation.md](simulation.md).
 
-**Gazebo Classic 11, not Ignition.** The plugins used — `gazebo_ros_diff_drive`,
-`gazebo_ros_ray_sensor`, `gazebo_ros_p3d` — are Classic. The Ignition equivalents
-have different names and parameters. This pins the stack to ROS 2 Humble.
+**gz-sim Harmonic on ROS 2 Jazzy, rendered on the CPU.** Both LiDARs are
+`gpu_lidar` sensors, gz-sim's only LiDAR, rendered by ogre2. Without a GPU they
+render through Mesa's llvmpipe, which is what CI and the container use, and the
+simulation runs below real time. Why this pairing, and what the migration from
+Classic changed, is in [simulation.md](simulation.md).
 
-A ROS 2 Humble install is **not** sufficient on its own. A stock
-`ros-humble-desktop` does not pull in Gazebo, and the following are separate
-installs that this stack requires: `gazebo`, `ros-humble-gazebo-ros-pkgs`,
-`ros-humble-robot-localization`, `ros-humble-cartographer-ros` and
-`ros-humble-xacro`. `scripts/setup.sh` installs all of them; the Docker image
-is the supported path precisely because that list is easy to get wrong.
+**tf2 0.36.23 or later is required.** tf2 0.36.22 has a deadlock between
+`waitForTransform` and `testTransformableRequests` that froze AMCL and both
+costmaps a minute or two into a run. The image and CI refuse to build against
+an older tf2; a native install must be up to date.
 
 **The casters are held 3 mm off the floor.** A physical AMR rests on wheels and
 casters together. Here the drive wheels carry the load and the casters only stop

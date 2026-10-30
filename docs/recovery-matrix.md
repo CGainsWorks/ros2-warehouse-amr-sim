@@ -1,5 +1,13 @@
 # Recovery behaviour matrix
 
+> **Simulator.** The matrix on this page was measured on **Gazebo Classic 11
+> with ROS 2 Humble**, before the migration to gz-sim Harmonic on ROS 2 Jazzy
+> ([simulation.md](simulation.md)). `make faults` has been ported (faults now
+> move a dynamic pallet through gz-sim's `set_pose`) but has not been rerun, so
+> these are historical figures. On gz-sim the recovery ladder is exercised by
+> the CI integration test (`src/amr_bringup/test/test_navigation_recovery.launch.py`):
+> a pallet set down on the goal, a recovery, then success.
+
 ## How this is run, and why it is five runs
 
 **One induced failure per run.** `scripts/run_faults.sh` starts the simulation

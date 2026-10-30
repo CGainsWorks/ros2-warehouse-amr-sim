@@ -1,5 +1,14 @@
 # Localisation accuracy
 
+> **Simulator.** The simulated figures on this page were measured on **Gazebo
+> Classic 11 with ROS 2 Humble**, before the stack moved to gz-sim Harmonic on
+> ROS 2 Jazzy in October 2026 ([simulation.md](simulation.md)). They are kept
+> because the diagnosis they record (the decoupling, the z_rand fix, the bugs
+> the harness found) still explains the configuration. They are not
+> reproducible from this tree. The current simulated figures are in the
+> README, rendered from `results/reference/gazebo_localisation.json`, and the
+> offline benchmark figures on this page are unaffected by the simulator.
+
 ## What has been measured, and what has not
 
 This distinction runs through the whole document and is not hedging — the two
