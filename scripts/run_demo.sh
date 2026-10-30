@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The one-command demo referenced by the README.
 #
-# Prefers Docker, because that pins Gazebo Classic 11 against Humble, and falls
+# Prefers Docker, because that pins gz-sim Harmonic against Jazzy, and falls
 # back to a native workspace if one is already sourced. If neither is available
 # it says so and points at the offline checks, which need nothing but Python and
 # reproduce most of the repository's quantitative claims.

@@ -1,0 +1,56 @@
+# ros_gz_bridge topics between gz-sim (Harmonic) and ROS 2 (Jazzy).
+#
+# This file is the whole interface between the simulator and the stack. The
+# Classic gazebo_ros plugins published into ROS themselves; gz-sim systems
+# publish on gz-transport and nothing reaches ROS unless it is listed here.
+#
+# Not listed, deliberately:
+#   * the DiffDrive transform (/model/warehouse_amr/tf_unused). The EKF owns
+#     odom -> base_footprint, and two publishers on one edge make the tree flip.
+#   * the 2D LiDAR. Its topic is scan or scan_raw depending on whether the
+#     dropout relay is in the path, so simulation.launch.py adds it.
+#   * /world/warehouse/set_pose, a service, also added by the launch file.
+
+- ros_topic_name: /clock
+  gz_topic_name: /clock
+  ros_type_name: rosgraph_msgs/msg/Clock
+  gz_type_name: gz.msgs.Clock
+  direction: GZ_TO_ROS
+
+- ros_topic_name: /cmd_vel
+  gz_topic_name: /cmd_vel
+  ros_type_name: geometry_msgs/msg/Twist
+  gz_type_name: gz.msgs.Twist
+  direction: ROS_TO_GZ
+
+# Wheel odometry without covariance; odom_covariance republishes it on /odom.
+- ros_topic_name: /odom_raw
+  gz_topic_name: /odom_raw
+  ros_type_name: nav_msgs/msg/Odometry
+  gz_type_name: gz.msgs.Odometry
+  direction: GZ_TO_ROS
+
+- ros_topic_name: /joint_states
+  gz_topic_name: /joint_states
+  ros_type_name: sensor_msgs/msg/JointState
+  gz_type_name: gz.msgs.Model
+  direction: GZ_TO_ROS
+
+- ros_topic_name: /imu/data
+  gz_topic_name: /imu/data
+  ros_type_name: sensor_msgs/msg/Imu
+  gz_type_name: gz.msgs.IMU
+  direction: GZ_TO_ROS
+
+- ros_topic_name: /lidar_3d/points
+  gz_topic_name: /lidar_3d/points
+  ros_type_name: sensor_msgs/msg/PointCloud2
+  gz_type_name: gz.msgs.PointCloudPacked
+  direction: GZ_TO_ROS
+
+# Evaluation only. pose_logger is the sole permitted subscriber.
+- ros_topic_name: /ground_truth/pose
+  gz_topic_name: /ground_truth/pose
+  ros_type_name: nav_msgs/msg/Odometry
+  gz_type_name: gz.msgs.Odometry
+  direction: GZ_TO_ROS

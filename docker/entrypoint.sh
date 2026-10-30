@@ -5,16 +5,16 @@
 # the guard below: ROS's setup.bash trips over unset variables under `set -u`,
 # so the sourcing happens first and strict mode is enabled afterwards.
 
-source /opt/ros/humble/setup.bash
+source /opt/ros/jazzy/setup.bash
 if [ -f "${WORKSPACE:-/ws}/install/setup.bash" ]; then
   source "${WORKSPACE:-/ws}/install/setup.bash"
 fi
 
 set -euo pipefail
 
-# Gazebo Classic writes to ~/.gazebo and fails opaquely if HOME is unwritable,
-# which happens when the container is run with --user.
+# gz-sim writes logs and its render cache under ~/.gz and fails opaquely if
+# HOME is unwritable, which happens when the container is run with --user.
 export HOME="${HOME:-/tmp}"
-mkdir -p "${HOME}/.gazebo"
+mkdir -p "${HOME}/.gz"
 
 exec "$@"

@@ -67,36 +67,16 @@ bt_navigator:
     # resolve FindPackageShare. tests/test_config_consistency.py asserts this
     # file contains no unexpanded substitution syntax.
 
-    plugin_lib_names:
-      - nav2_compute_path_to_pose_action_bt_node
-      - nav2_compute_path_through_poses_action_bt_node
-      - nav2_follow_path_action_bt_node
-      - nav2_back_up_action_bt_node
-      - nav2_spin_action_bt_node
-      - nav2_wait_action_bt_node
-      - nav2_clear_costmap_service_bt_node
-      - nav2_is_stuck_condition_bt_node
-      - nav2_goal_reached_condition_bt_node
-      - nav2_goal_updated_condition_bt_node
-      - nav2_initial_pose_received_condition_bt_node
-      - nav2_reinitialize_global_localization_service_bt_node
-      - nav2_rate_controller_bt_node
-      - nav2_distance_controller_bt_node
-      - nav2_speed_controller_bt_node
-      - nav2_recovery_node_bt_node
-      - nav2_pipeline_sequence_bt_node
-      - nav2_round_robin_node_bt_node
-      - nav2_transform_available_condition_bt_node
-      - nav2_time_expired_condition_bt_node
-      - nav2_distance_traveled_condition_bt_node
-      - nav2_single_trigger_bt_node
-      - nav2_is_battery_low_condition_bt_node
-      - nav2_navigate_through_poses_action_bt_node
-      - nav2_navigate_to_pose_action_bt_node
-      - nav2_remove_passed_goals_action_bt_node
-      - nav2_planner_selector_bt_node
-      - nav2_controller_selector_bt_node
-      - nav2_goal_checker_selector_bt_node
+    # Jazzy (Nav2 1.3) loads every built-in BT node library itself, and
+    # plugin_lib_names is now only for custom nodes. The Humble version of
+    # this file listed all 29 built-ins here; on Jazzy that registers each one
+    # twice and bt_navigator fails to configure. There are no custom nodes.
+    navigators: [navigate_to_pose, navigate_through_poses]
+    navigate_to_pose:
+      plugin: nav2_bt_navigator::NavigateToPoseNavigator
+    navigate_through_poses:
+      plugin: nav2_bt_navigator::NavigateThroughPosesNavigator
+    error_code_names: [compute_path_error_code, follow_path_error_code]
 
 # =============================================================================
 controller_server:
@@ -121,7 +101,8 @@ controller_server:
     # looking broken.
     failure_tolerance: 3.0
 
-    progress_checker_plugin: progress_checker
+    # A list since Iron; the singular Humble key is ignored on Jazzy.
+    progress_checker_plugins: [progress_checker]
     goal_checker_plugins: [general_goal_checker]
     controller_plugins: [FollowPath]
 
@@ -310,13 +291,30 @@ controller_server:
       Oscillation.x_only_threshold: 0.05
 
       # Rotate in place to the goal heading once inside the xy tolerance.
-      # slowing_factor and lookahead are left at defaults; the trans_stopped
-      # velocity must agree with the goal checker's idea of stopped.
+      # slowing_factor and lookahead are left at defaults.
       RotateToGoal.scale: 32.0
       RotateToGoal.slowing_factor: 5.0
       RotateToGoal.lookahead_time: -1.0
-      RotateToGoal.xy_goal_tolerance: 0.20
-      RotateToGoal.trans_stopped_velocity: 0.25
+      # THESE TWO ARE NOT RotateToGoal.* KEYS, although every other critic
+      # parameter is. The critic reads FollowPath.xy_goal_tolerance and
+      # FollowPath.trans_stopped_velocity, at the controller level. This file
+      # used to set RotateToGoal.xy_goal_tolerance: 0.20, which nothing reads,
+      # so the critic ran on its 0.25 m default while the goal checker wanted
+      # 0.20 m.
+      #
+      # Measured on gz-sim, with /evaluation published: the robot stopped
+      # 0.24 m short of every goal by its own estimate, and every one of the
+      # 779 forward trajectories DWB sampled was rejected by RotateToGoal
+      # ("Nonrotation command near goal"), so it could only turn on the spot
+      # until the progress checker failed it. Inside the critic's radius but
+      # outside the goal checker's, there is no command that completes.
+      #
+      # 0.15 m, inside the goal checker's 0.20 m, so translation ends inside
+      # the goal radius with margin for AMCL's estimate moving by a few
+      # centimetres as the robot stops. tests/test_config_consistency.py pins
+      # both the key names and the ordering.
+      xy_goal_tolerance: 0.15
+      trans_stopped_velocity: 0.25
 
 # =============================================================================
 local_costmap:
@@ -375,7 +373,9 @@ local_costmap:
           data_type: LaserScan
           sensor_frame: lidar_2d_link
           # 0.3 s. Two scan periods; beyond that an observation is stale enough
-          # that acting on it is worse than dropping it.
+          # that acting on it is worse than dropping it. Jazzy enforces this:
+          # the controller and planner will not run on a costmap whose sources
+          # are late, where Humble only warned.
           observation_persistence: 0.0
           expected_update_rate: 0.3
           marking: true
@@ -525,7 +525,7 @@ planner_server:
       # and NavFn plans the full 30 m in single-digit milliseconds. Smac 2D
       # would be the right choice if the warehouse had open cross-dock areas
       # where several routes compete.
-      plugin: nav2_navfn_planner/NavfnPlanner
+      plugin: nav2_navfn_planner::NavfnPlanner
       # A* rather than Dijkstra. Over a 30 m aisle the heuristic prunes most of
       # the search, and the resulting path is indistinguishable.
       use_astar: true
@@ -563,17 +563,21 @@ behavior_server:
 
     behavior_plugins: [spin, backup, drive_on_heading, wait, assisted_teleop]
     spin:
-      plugin: nav2_behaviors/Spin
+      plugin: nav2_behaviors::Spin
     backup:
-      plugin: nav2_behaviors/BackUp
+      plugin: nav2_behaviors::BackUp
     drive_on_heading:
-      plugin: nav2_behaviors/DriveOnHeading
+      plugin: nav2_behaviors::DriveOnHeading
     wait:
-      plugin: nav2_behaviors/Wait
+      plugin: nav2_behaviors::Wait
     assisted_teleop:
-      plugin: nav2_behaviors/AssistedTeleop
+      plugin: nav2_behaviors::AssistedTeleop
 
-    global_frame: odom
+    # Jazzy splits the Humble global_frame into two: behaviours that move the
+    # robot (spin, back up) work in local_frame, which is what global_frame
+    # meant here before.
+    local_frame: odom
+    global_frame: map
     robot_base_frame: base_link
     transform_tolerance: 0.1
 

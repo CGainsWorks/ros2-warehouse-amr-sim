@@ -50,6 +50,22 @@ PEOPLE: List[Tuple[float, float]] = [(8.0, 0.0), (-3.0, 1.0), (14.0, -0.8)]
 
 ROBOT_SPAWN = (-12.0, 0.0, 0.0)
 
+# A loaded pallet the fault injector can move. It is parked outside the
+# building, behind the 6 m walls and off the reference map, so on a normal run
+# no sensor can see it and it is not part of any scene.
+#
+# Why a separate prop rather than teleporting the aisle pallets as Gazebo
+# Classic did: in gz-sim, set_pose on a *static* model updates the entity's
+# pose component but neither the physics engine nor the rendering scene follows
+# it, so a teleported static pallet is invisible to both LiDARs and the robot
+# drives through it. Measured: the stack moved to 2.35 m ahead of the robot,
+# `gz model -p` reported the new pose, and the forward LiDAR beams still read
+# 16 m. A dynamic model is moved properly, so the prop is dynamic and heavy
+# enough (250 kg) that the robot cannot shove it aside.
+FAULT_PALLET_SIZE = (1.2, 0.8, 0.95)
+FAULT_PALLET_PARK = (0.0, 25.0)
+FAULT_PALLET_MASS = 250.0
+
 HALF_L = LENGTH / 2.0
 HALF_W = WIDTH / 2.0
 
@@ -64,8 +80,29 @@ def bay_x_positions() -> List[float]:
     return out
 
 
+# Visual colours, RGBA. Gazebo Classic named its materials from a script file
+# (``Gazebo/Grey``); gz-sim has no material scripts, so each name maps to the
+# ambient/diffuse colour it used to stand for. Purely cosmetic: neither the
+# LiDARs nor the physics read a colour.
+COLOURS = {
+    "grey": "0.70 0.70 0.70 1",
+    "dark_grey": "0.18 0.18 0.18 1",
+    "orange": "1.00 0.51 0.05 1",
+    "wood": "0.55 0.38 0.22 1",
+    "wood_pallet": "0.65 0.50 0.32 1",
+    "red": "0.80 0.10 0.10 1",
+    "yellow": "0.95 0.80 0.10 1",
+}
+
+
+def _material(colour: str) -> str:
+    rgba = COLOURS[colour]
+    return (f"<material><ambient>{rgba}</ambient><diffuse>{rgba}</diffuse>"
+            f"<specular>0.1 0.1 0.1 1</specular></material>")
+
+
 def _box_model(name: str, x: float, y: float, z: float, sx: float, sy: float, sz: float,
-               colour: str = "Gazebo/Grey", static: bool = True) -> str:
+               colour: str = "grey", static: bool = True) -> str:
     """A static box. Collision and visual share one geometry."""
     return f"""
     <model name="{name}">
@@ -77,19 +114,14 @@ def _box_model(name: str, x: float, y: float, z: float, sx: float, sy: float, sz
         </collision>
         <visual name="visual">
           <geometry><box><size>{sx:.4f} {sy:.4f} {sz:.4f}</size></box></geometry>
-          <material>
-            <script>
-              <uri>file://media/materials/scripts/gazebo.material</uri>
-              <name>{colour}</name>
-            </script>
-          </material>
+          {_material(colour)}
         </visual>
       </link>
     </model>"""
 
 
 def _cylinder_model(name: str, x: float, y: float, z: float, radius: float, length: float,
-                    colour: str = "Gazebo/Grey") -> str:
+                    colour: str = "grey") -> str:
     return f"""
     <model name="{name}">
       <static>true</static>
@@ -100,12 +132,34 @@ def _cylinder_model(name: str, x: float, y: float, z: float, radius: float, leng
         </collision>
         <visual name="visual">
           <geometry><cylinder><radius>{radius:.4f}</radius><length>{length:.4f}</length></cylinder></geometry>
-          <material>
-            <script>
-              <uri>file://media/materials/scripts/gazebo.material</uri>
-              <name>{colour}</name>
-            </script>
-          </material>
+          {_material(colour)}
+        </visual>
+      </link>
+    </model>"""
+
+
+def _dynamic_box_model(name: str, x: float, y: float, sx: float, sy: float, sz: float,
+                       mass: float, colour: str) -> str:
+    """A free box resting on the floor, with the inertia of a uniform solid."""
+    ixx = mass * (sy * sy + sz * sz) / 12.0
+    iyy = mass * (sx * sx + sz * sz) / 12.0
+    izz = mass * (sx * sx + sy * sy) / 12.0
+    return f"""
+    <model name="{name}">
+      <static>false</static>
+      <pose>{x:.4f} {y:.4f} {sz / 2:.4f} 0 0 0</pose>
+      <link name="link">
+        <inertial>
+          <mass>{mass:.1f}</mass>
+          <inertia><ixx>{ixx:.4f}</ixx><iyy>{iyy:.4f}</iyy><izz>{izz:.4f}</izz>
+            <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz></inertia>
+        </inertial>
+        <collision name="collision">
+          <geometry><box><size>{sx:.4f} {sy:.4f} {sz:.4f}</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>{sx:.4f} {sy:.4f} {sz:.4f}</size></box></geometry>
+          {_material(colour)}
         </visual>
       </link>
     </model>"""
@@ -136,7 +190,7 @@ def build_world() -> str:
                     f"upright_{tag}_{bay_index}_{depth_index}",
                     x, y, RACK_HEIGHT / 2,
                     UPRIGHT_SIZE, UPRIGHT_SIZE, RACK_HEIGHT,
-                    colour="Gazebo/DarkGrey",
+                    colour="dark_grey",
                 ))
 
         xs = bay_x_positions()
@@ -149,7 +203,7 @@ def build_world() -> str:
                 f"beam_{tag}_{level_index}",
                 beam_cx, (y_front + y_back) / 2.0, beam_z + BEAM_THICKNESS / 2,
                 beam_len, RACK_DEPTH, BEAM_THICKNESS,
-                colour="Gazebo/Orange",
+                colour="orange",
             ))
 
         # Stock. Every third bay is left empty so the sensor can see through the
@@ -165,34 +219,38 @@ def build_world() -> str:
                 parts.append(_box_model(
                     f"pallet_{tag}_{bay_index}_{level_index}",
                     x, (y_front + y_back) / 2.0, level_z + 0.075,
-                    1.2, RACK_DEPTH - 0.1, 0.15, colour="Gazebo/Wood",
+                    1.2, RACK_DEPTH - 0.1, 0.15, colour="wood",
                 ))
                 parts.append(_box_model(
                     f"carton_{tag}_{bay_index}_{level_index}",
                     x, (y_front + y_back) / 2.0, level_z + 0.15 + 0.30,
-                    1.0, RACK_DEPTH - 0.2, 0.60, colour="Gazebo/WoodPallet",
+                    1.0, RACK_DEPTH - 0.2, 0.60, colour="wood_pallet",
                 ))
 
     # Roof support columns.
     for index, x in enumerate((-HALF_L / 2.0, HALF_L / 2.0)):
         parts.append(_cylinder_model(f"column_{index}", x, HALF_W - 0.8, WALL_HEIGHT / 2,
-                                     0.15, WALL_HEIGHT, colour="Gazebo/DarkGrey"))
+                                     0.15, WALL_HEIGHT, colour="dark_grey"))
 
     # Obstacles left in the aisle, which is what Nav2 has to plan around.
     for index, (px, py) in enumerate(FLOOR_PALLETS):
         parts.append(_box_model(f"aisle_pallet_{index}", px, py, 0.075, 1.2, 0.8, 0.15,
-                                colour="Gazebo/Wood"))
+                                colour="wood"))
         parts.append(_box_model(f"aisle_stack_{index}", px, py, 0.15 + 0.40, 1.0, 0.6, 0.80,
-                                colour="Gazebo/WoodPallet"))
+                                colour="wood_pallet"))
 
     # People, as static cylinders. Static because the dynamic-obstacle behaviour
-    # exercised in the recovery runs is injected by scripts/inject_faults.py,
+    # exercised in the recovery runs is injected by amr_bringup's fault_injector node,
     # which teleports these models on a schedule the fault log records. A
     # <plugin> based walker would move unrepeatably and make the recovery matrix
     # impossible to reproduce.
     for index, (px, py) in enumerate(PEOPLE):
         parts.append(_cylinder_model(f"person_{index}", px, py, 1.75 / 2, 0.25, 1.75,
-                                     colour="Gazebo/Red"))
+                                     colour="red"))
+
+    # The fault injector's movable pallet, parked out of sight.
+    parts.append(_dynamic_box_model("fault_pallet", FAULT_PALLET_PARK[0], FAULT_PALLET_PARK[1],
+                                    *FAULT_PALLET_SIZE, mass=FAULT_PALLET_MASS, colour="yellow"))
 
     models = "\n".join(parts)
 
@@ -205,31 +263,66 @@ def build_world() -> str:
   so that offline segmentation metrics describe the same warehouse the simulator
   does.
 -->
-<sdf version="1.6">
+<sdf version="1.9">
   <world name="warehouse">
 
-    <!-- 1 kHz physics with 10 real-time update rate factor headroom. The
-         default 1 ms step is kept: a larger step lets the caster spheres tunnel
-         through the floor at speed, which presents as the robot randomly
-         falling through the world. -->
-    <physics name="default_physics" default="true" type="ode">
+    <!-- 1 ms step, real-time target. The step is kept at the Classic value:
+         a larger one lets the caster spheres sink into the floor at speed,
+         which presents as the robot randomly snagging on nothing. DART is
+         gz-sim's default and only fully supported physics engine. -->
+    <physics name="1ms" type="dart">
       <max_step_size>0.001</max_step_size>
       <real_time_factor>1.0</real_time_factor>
       <real_time_update_rate>1000</real_time_update_rate>
     </physics>
 
-    <plugin name="gazebo_ros_state" filename="libgazebo_ros_state.so">
-      <ros><namespace>/gazebo</namespace></ros>
-      <update_rate>50.0</update_rate>
+    <!-- gz-sim loads nothing by default once a world names any system, so
+         every system the stack relies on is listed here.
+           Physics          rigid-body dynamics
+           UserCommands     /world/warehouse/set_pose, used by the fault injector
+           SceneBroadcaster pose and scene state for the GUI and gz topic tools
+           Sensors          renders both LiDARs (gpu_lidar needs ogre2)
+           Imu              the IMU is not a rendering sensor and has its own
+                            system -->
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
     </plugin>
+    <plugin filename="gz-sim-imu-system" name="gz::sim::systems::Imu"/>
 
-    <include><uri>model://sun</uri></include>
-    <include><uri>model://ground_plane</uri></include>
+    <!-- The Classic world included the sun and ground_plane models from the
+         local model database. gz-sim would fetch them from Fuel over the
+         network, which a CI runner should not depend on, so both are inline
+         with the Classic models' values (ground friction mu 100 / mu2 50). -->
+    <light type="directional" name="sun">
+      <cast_shadows>false</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><plane><normal>0 0 1</normal><size>100 100</size></plane></geometry>
+          <surface><friction><ode><mu>100</mu><mu2>50</mu2></ode></friction></surface>
+        </collision>
+        <visual name="visual">
+          <geometry><plane><normal>0 0 1</normal><size>100 100</size></plane></geometry>
+          <material><ambient>0.8 0.8 0.8 1</ambient><diffuse>0.8 0.8 0.8 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
 
     <scene>
       <ambient>0.5 0.5 0.5 1</ambient>
       <background>0.75 0.78 0.82 1</background>
       <shadows>false</shadows>
+      <grid>false</grid>
     </scene>
 {models}
 

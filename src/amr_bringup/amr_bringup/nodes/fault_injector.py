@@ -13,6 +13,14 @@ FAULTS AND WHAT EACH IS MEANT TO PROVOKE
     costmap clear and a spin if the obstacle is not resolvable from the current
     viewpoint.
 
+``block_goal``
+    Set a pallet stack down on the robot's destination, then take it away
+    after ``restore_after`` seconds. The goal is then inside an obstacle the
+    robot cannot drive into, so the controller stops making progress and the
+    behaviour tree has to walk its recovery ladder until the blockage clears.
+    This is the fault the CI integration test uses, because it exercises a
+    recovery every time.
+
 ``kidnap``
     Teleport the robot itself several metres down the aisle without telling the
     localisation stack. This is the hardest case in this environment: the
@@ -31,7 +39,8 @@ FAULTS AND WHAT EACH IS MEANT TO PROVOKE
     Publish a deliberately wrong ``/initialpose``, one racking bay from truth.
     Provokes exactly the aliasing failure the environment is designed around.
 
-Every fault is applied through the simulator's own service interface and logged
+Every fault is applied through the simulator's own service interface
+(gz-sim's ``/world/warehouse/set_pose``, bridged by ros_gz_bridge) and logged
 with a simulation timestamp. Faults are scheduled by time rather than by robot
 position so that a run is reproducible even when the robot's own behaviour
 changes in response to them.
@@ -44,12 +53,14 @@ from pathlib import Path
 from typing import List
 
 import rclpy
+from action_msgs.msg import GoalStatus, GoalStatusArray
 import yaml
-from gazebo_msgs.srv import SetEntityState
 from geometry_msgs.msg import PoseWithCovarianceStamped
 from rcl_interfaces.msg import ParameterDescriptor
 from rclpy.node import Node
 from rclpy.qos import QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile, QoSReliabilityPolicy
+from ros_gz_interfaces.msg import Entity
+from ros_gz_interfaces.srv import SetEntityPose
 from std_msgs.msg import Bool
 from std_srvs.srv import Empty
 
@@ -65,6 +76,8 @@ class FaultInjector(Node):
         )
         self.declare_parameter("output", "results/faults.json")
         self.declare_parameter("scan_relay_control", "scan_relay/blind")
+        # gz-sim's UserCommands service, bridged into ROS by simulation.launch.py.
+        self.declare_parameter("set_pose_service", "/world/warehouse/set_pose")
 
         path = str(self.get_parameter("schedule_file").value)
         if not path:
@@ -73,9 +86,24 @@ class FaultInjector(Node):
 
         self._applied: List[dict] = []
         self._pending = list(self._schedule)
-        self._start = self._now()
+        # The schedule's clock. With arm_on_goal (the default) it starts when
+        # Nav2 reports a navigation goal executing, so "at: 10" means ten
+        # seconds into the mission however long the stack took to come up.
+        # Before this, the clock started with the node, and a slow Nav2
+        # bringup moved every fault earlier in the mission by the same amount.
+        self.declare_parameter("arm_on_goal", True)
+        self._start = None
+        if self.get_parameter("arm_on_goal").value:
+            for action in ("navigate_through_poses", "navigate_to_pose"):
+                self.create_subscription(
+                    GoalStatusArray, "/%s/_action/status" % action, self._on_goal_status, 10
+                )
+        else:
+            self._start = self._now()
 
-        self._set_state = self.create_client(SetEntityState, "/gazebo/set_entity_state")
+        self._set_pose = self.create_client(
+            SetEntityPose, str(self.get_parameter("set_pose_service").value)
+        )
         self._initial_pose_pub = self.create_publisher(PoseWithCovarianceStamped, "/initialpose", 10)
         self._relocalise = self.create_client(Empty, "/reinitialize_global_localization")
 
@@ -113,7 +141,14 @@ class FaultInjector(Node):
             raise ValueError("%s: no faults defined" % path)
         return faults
 
+    def _on_goal_status(self, msg: GoalStatusArray) -> None:
+        if self._start is None and any(s.status == GoalStatus.STATUS_EXECUTING for s in msg.status_list):
+            self._start = self._now()
+            self.get_logger().info("navigation goal executing; fault schedule clock started")
+
     def _tick(self) -> None:
+        if self._start is None:
+            return
         elapsed = self._now() - self._start
         while self._pending and elapsed >= float(self._pending[0]["at"]):
             fault = self._pending.pop(0)
@@ -132,7 +167,7 @@ class FaultInjector(Node):
 
         detail = "applied"
         try:
-            if kind in ("block_aisle", "kidnap"):
+            if kind in ("block_aisle", "block_goal", "kidnap"):
                 detail = self._teleport(fault)
             elif kind == "localisation_jump":
                 detail = self._localisation_jump(fault)
@@ -178,24 +213,54 @@ class FaultInjector(Node):
         return "LiDAR blinded for %.1f s" % duration
 
     def _teleport(self, fault: dict) -> str:
-        if not self._set_state.wait_for_service(timeout_sec=2.0):
-            return "failed: /gazebo/set_entity_state unavailable"
+        """Move a model in the simulator, and optionally move it back.
 
-        request = SetEntityState.Request()
-        request.state.name = str(fault["model"])
-        request.state.reference_frame = "world"
-        request.state.pose.position.x = float(fault["x"])
-        request.state.pose.position.y = float(fault["y"])
-        request.state.pose.position.z = float(fault.get("z", 0.0))
-        qx, qy, qz, qw = quat_from_yaw(float(fault.get("yaw", 0.0)))
-        request.state.pose.orientation.x = qx
-        request.state.pose.orientation.y = qy
-        request.state.pose.orientation.z = qz
-        request.state.pose.orientation.w = qw
+        ``restore_after`` (seconds) schedules a second teleport to
+        ``restore_x``/``restore_y``. That is what turns ``block_goal`` into a
+        transient blockage: a pallet set down on the destination and then
+        taken away, which the robot can only survive by waiting it out through
+        the recovery ladder.
+        """
+        detail = self._set_entity_pose(
+            str(fault["model"]), float(fault["x"]), float(fault["y"]),
+            float(fault.get("z", 0.0)), float(fault.get("yaw", 0.0)),
+        )
+        if "restore_after" in fault:
+            delay = float(fault["restore_after"])
+            restore = (str(fault["model"]), float(fault["restore_x"]), float(fault["restore_y"]),
+                       float(fault.get("restore_z", fault.get("z", 0.0))), 0.0)
+            holder = {}
 
-        self._set_state.call_async(request)
-        return "teleported %s to (%.2f, %.2f)" % (request.state.name, request.state.pose.position.x,
-                                                  request.state.pose.position.y)
+            def _restore() -> None:
+                holder["timer"].cancel()
+                result = self._set_entity_pose(*restore)
+                self.get_logger().warn("fault cleared after %.1f s: %s" % (delay, result))
+                self._applied.append({"t": self._now() - self._start, "type": "restore",
+                                      "params": {"model": restore[0]}, "detail": result})
+                self._write()
+
+            holder["timer"] = self.create_timer(delay, _restore)
+            detail += "; restoring after %.1f s" % delay
+        return detail
+
+    def _set_entity_pose(self, name: str, x: float, y: float, z: float, yaw: float) -> str:
+        if not self._set_pose.wait_for_service(timeout_sec=2.0):
+            return "failed: %s unavailable" % self._set_pose.srv_name
+
+        request = SetEntityPose.Request()
+        request.entity.name = name
+        request.entity.type = Entity.MODEL
+        request.pose.position.x = x
+        request.pose.position.y = y
+        request.pose.position.z = z
+        qx, qy, qz, qw = quat_from_yaw(yaw)
+        request.pose.orientation.x = qx
+        request.pose.orientation.y = qy
+        request.pose.orientation.z = qz
+        request.pose.orientation.w = qw
+
+        self._set_pose.call_async(request)
+        return "teleported %s to (%.2f, %.2f)" % (name, x, y)
 
     def _localisation_jump(self, fault: dict) -> str:
         msg = PoseWithCovarianceStamped()

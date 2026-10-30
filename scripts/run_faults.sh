@@ -46,7 +46,7 @@ mkdir -p "${FAULT_ROOT}"
 
 SIM_PID=""
 
-# Between runs, gzserver has to be *gone*, not merely signalled. The first
+# Between runs, the gz sim server has to be *gone*, not merely signalled. The first
 # version slept three seconds and hoped. Run 2 then died with
 #   Failed init_port fastrtps_port17919: open_and_lock_file failed
 # because run 1's DDS shared-memory segments were still held, and since the
@@ -54,15 +54,14 @@ SIM_PID=""
 # minutes with nothing to show for it.
 cleanup_sim() {
   [[ -n "${SIM_PID}" ]] && kill -- -"${SIM_PID}" 2>/dev/null || true
-  pkill -f gzserver 2>/dev/null || true
-  pkill -f gzclient 2>/dev/null || true
+  pkill -f "gz sim" 2>/dev/null || true
   SIM_PID=""
 
   local waited=0
-  while pgrep -f "gz(server|client)" > /dev/null 2>&1; do
+  while pgrep -f "gz sim" > /dev/null 2>&1; do
     if (( waited >= 20 )); then
-      echo "    gzserver will not exit; SIGKILL"
-      pkill -9 -f "gz(server|client)" 2>/dev/null || true
+      echo "    gz sim will not exit; SIGKILL"
+      pkill -9 -f "gz sim" 2>/dev/null || true
       sleep 2
       break
     fi

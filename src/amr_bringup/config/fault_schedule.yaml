@@ -21,7 +21,11 @@ faults:
   #    lane 0.06 m wide, which is not a replanning test — it is an impassable
   #    aisle, and the robot correctly gave up. Offset, it leaves 0.51 m, which
   #    is the "plan around it" case this fault is meant to exercise.
-  - {at: 12.0, type: block_aisle, model: aisle_pallet_0, x: -6.0, y: 0.45, z: 0.075}
+  #    The model is fault_pallet, the dynamic prop parked outside the building:
+  #    gz-sim does not move a static model's collision or visual on set_pose,
+  #    so the Classic choice of aisle_pallet_0 would teleport nothing a sensor
+  #    can see. See FAULT_PALLET_* in simulation/generate_world.py.
+  - {at: 12.0, type: block_aisle, model: fault_pallet, x: -6.0, y: 0.45, z: 0.475}
 
   # 2. Wrong pose exactly one racking bay (2.7 m) from truth. This is the
   #    aliasing case: the scan matches the wrong bay perfectly, so nothing local

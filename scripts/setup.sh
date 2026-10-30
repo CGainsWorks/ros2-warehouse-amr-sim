@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# Set up a native ROS 2 Humble workspace on Ubuntu 22.04.
+# Set up a native ROS 2 Jazzy workspace on Ubuntu 24.04.
 #
-# Docker is the supported path — see docker/docker-compose.yml — because it
-# pins Gazebo Classic 11 against Humble and that pairing is the fragile part.
-# This script exists for working on a machine that already has Humble.
+# Docker is the supported path (see docker/docker-compose.yml) because it pins
+# gz-sim Harmonic against Jazzy. This script exists for working on a machine
+# that already has Jazzy. Jazzy's ros-jazzy-ros-gz packages bring Harmonic
+# with them through the gz_*_vendor packages, so there is no separate Gazebo
+# install to get wrong.
 #
 # It is idempotent: re-running it is safe.
 
@@ -12,15 +14,14 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${REPO_ROOT}"
 
-if [[ ! -f /opt/ros/humble/setup.bash ]]; then
+if [[ ! -f /opt/ros/jazzy/setup.bash ]]; then
   cat >&2 <<'EOF'
-ERROR: ROS 2 Humble was not found at /opt/ros/humble.
+ERROR: ROS 2 Jazzy was not found at /opt/ros/jazzy.
 
-This stack targets Humble specifically, because it uses Gazebo Classic 11
-plugins (gazebo_ros_diff_drive, gazebo_ros_ray_sensor, gazebo_ros_p3d) whose
-Ignition equivalents have different names and parameters.
+This stack targets Jazzy with gz-sim Harmonic, the officially paired
+combination; see docs/simulation.md for why.
 
-Either install Humble, or use the container, which needs neither:
+Either install Jazzy, or use the container, which needs neither:
 
     make docker-check    # offline metrics, no simulator
     make docker-demo     # the full simulation
@@ -29,28 +30,26 @@ EOF
 fi
 
 # shellcheck disable=SC1091
-source /opt/ros/humble/setup.bash
+source /opt/ros/jazzy/setup.bash
 
 echo "--- installing dependencies"
 sudo apt-get update
 sudo apt-get install -y --no-install-recommends \
-  python3-pip python3-numpy python3-scipy python3-yaml \
-  python3-colcon-common-extensions python3-rosdep \
-  gazebo libgazebo-dev \
-  ros-humble-gazebo-ros-pkgs \
-  ros-humble-navigation2 ros-humble-nav2-bringup \
-  ros-humble-robot-localization \
-  ros-humble-cartographer ros-humble-cartographer-ros \
-  ros-humble-xacro ros-humble-rviz2
-
-pip3 install --user --no-cache-dir pytest flake8
+  python3-numpy python3-scipy python3-yaml python3-pytest python3-paho-mqtt flake8 \
+  python3-colcon-common-extensions python3-rosdep mosquitto \
+  ros-jazzy-ros-gz \
+  ros-jazzy-navigation2 ros-jazzy-nav2-bringup \
+  ros-jazzy-robot-localization \
+  ros-jazzy-cartographer ros-jazzy-cartographer-ros \
+  ros-jazzy-rmw-cyclonedds-cpp \
+  ros-jazzy-launch-testing ros-jazzy-launch-testing-ros \
+  ros-jazzy-xacro ros-jazzy-rviz2
 
 if [[ ! -f /etc/ros/rosdep/sources.list.d/20-default.list ]]; then
   sudo rosdep init
 fi
-rosdep update --rosdistro humble
-rosdep install --from-paths src --ignore-src -y --rosdistro humble \
-  --skip-keys "gazebo libgazebo-dev"
+rosdep update --rosdistro jazzy
+rosdep install --from-paths src --ignore-src -y --rosdistro jazzy
 
 echo "--- regenerating the world, zones and reference map"
 python3 simulation/generate_world.py

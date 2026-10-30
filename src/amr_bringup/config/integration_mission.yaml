@@ -1,0 +1,6 @@
+# Single-goal mission for the CI integration test: from the spawn pose at
+# (-12, 0) east along the aisle centreline, past the aisle pallet at x = -6.5
+# and the person at (-3, 1), to the pick face abreast of bays 3 to 5. It is
+# the second waypoint of mission_waypoints.yaml, approached on its own heading.
+waypoints:
+  - {x: -1.35, y: 0.0, yaw: 0.0}

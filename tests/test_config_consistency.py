@@ -33,6 +33,8 @@ GAZEBO_XACRO = SRC / "amr_description" / "urdf" / "amr.gazebo.xacro"
 ZONES = REPO_ROOT / "simulation" / "zones" / "warehouse_zones.yaml"
 WAYPOINTS = SRC / "amr_bringup" / "config" / "mission_waypoints.yaml"
 MAP_YAML = REPO_ROOT / "simulation" / "maps" / "warehouse.yaml"
+GZ_BRIDGE = SRC / "amr_bringup" / "config" / "gz_bridge.yaml"
+WORLD = REPO_ROOT / "simulation" / "worlds" / "warehouse.world"
 
 
 def _load_yaml(path: Path) -> dict:
@@ -84,10 +86,10 @@ class TestRobotGeometry:
         which the EKF cannot distinguish from a persistent gyro bias."""
         assert _xacro_property("wheel_separation") == _gazebo_scalar("wheel_separation")
 
-    def test_wheel_diameter_matches_the_urdf_radius(self):
+    def test_wheel_radius_matches_the_urdf(self):
         """A mismatch scales all reported distance, which looks exactly like a
         slipping wheel and will be chased as one."""
-        assert _gazebo_scalar("wheel_diameter") == pytest.approx(2 * _xacro_property("wheel_radius"))
+        assert _gazebo_scalar("wheel_radius") == pytest.approx(_xacro_property("wheel_radius"))
 
     def test_costmap_footprint_covers_the_widest_part_of_the_robot(
         self, local_costmap, global_costmap
@@ -123,9 +125,8 @@ class TestDynamics:
     def test_dwb_acceleration_matches_the_base(self, dwb):
         """DWB planning more deceleration than the wheels can deliver overshoots
         every goal and clips every corner."""
-        wheel_radius = _xacro_property("wheel_radius")
-        max_wheel_accel = _gazebo_scalar("max_wheel_acceleration")  # rad/s^2
-        linear_accel = max_wheel_accel * wheel_radius
+        linear_accel = _gazebo_scalar("max_linear_acceleration")  # m/s^2
+        assert _gazebo_scalar("min_linear_acceleration") == pytest.approx(-linear_accel)
         assert dwb["acc_lim_x"] == pytest.approx(linear_accel), (
             "acc_lim_x is %.2f m/s^2 but the base can only do %.2f"
             % (dwb["acc_lim_x"], linear_accel)
@@ -487,9 +488,13 @@ class TestLocalisation:
             "world_frame must be odom so the EKF publishes odom->base_link; "
             "AMCL owns map->odom"
         )
-        assert "<publish_odom_tf>false</publish_odom_tf>" in GAZEBO_XACRO.read_text(
-            encoding="utf-8"
-        ).replace(" ", ""), "the Gazebo diff drive plugin must not also publish odom TF"
+        # gz-sim's DiffDrive always publishes a transform; it must go to a topic
+        # the bridge does not carry, or odom -> base_footprint has two owners.
+        tf_topic = re.search(r"<tf_topic>([^<]+)</tf_topic>", GAZEBO_XACRO.read_text(encoding="utf-8")).group(1)
+        bridged = {entry["gz_topic_name"] for entry in _load_yaml(GZ_BRIDGE)}
+        assert tf_topic not in bridged and "/tf" not in bridged, (
+            "the DiffDrive transform is bridged into ROS; the EKF must be the only odom TF publisher"
+        )
 
     def test_ekf_base_frame_is_the_urdf_root(self):
         """The EKF must publish odom -> the URDF's ROOT link.
@@ -529,7 +534,7 @@ class TestLocalisation:
         ekf = _load_yaml(EKF_PARAMS)["ekf_filter_node"]["ros__parameters"]
         amcl = _load_yaml(AMCL_PARAMS)["amcl"]["ros__parameters"]
         gazebo = GAZEBO_XACRO.read_text(encoding="utf-8")
-        plugin_frame = re.search(r"<robot_base_frame>([^<]+)</robot_base_frame>", gazebo).group(1)
+        plugin_frame = re.search(r"<child_frame_id>([^<]+)</child_frame_id>", gazebo).group(1)
 
         assert ekf["base_link_frame"] == amcl["base_frame_id"] == plugin_frame, (
             "base frame disagrees: EKF=%r AMCL=%r gazebo plugin=%r"
@@ -545,9 +550,10 @@ class TestLocalisation:
         assert "odom0" in ekf and "imu0" in ekf and "odom1" in ekf
 
     def test_wheel_odometry_is_fused_differentially_not_as_raw_twist(self):
-        """The plugin's twist has no sign, so the pose must be used instead.
+        """Fuse the wheel pose differentially, not the twist.
 
-        gazebo_ros_diff_drive computes its ENCODER forward velocity as
+        Kept from Gazebo Classic, where it was forced: gazebo_ros_diff_drive
+        computes its ENCODER forward velocity as
         sqrt(dx^2 + dy^2)/dt, a magnitude that is never negative. The pose it
         integrates is correctly signed; the twist is not. Fusing the twist
         integrates every reverse as a forward: on an open-loop profile driving
@@ -556,7 +562,10 @@ class TestLocalisation:
         perfectly correct path length, because it was integrating |v|.
 
         Differential mode differentiates the pose, so this is still velocity
-        fusion — it just keeps the sign.
+        fusion and it keeps the sign. gz-sim's DiffDrive publishes a signed
+        twist, but the localisation figures were tuned with pose fusion, and
+        keeping it means the EKF is right whichever simulator or base driver
+        feeds it.
         """
         ekf = _load_yaml(EKF_PARAMS)["ekf_filter_node"]["ros__parameters"]
         config = ekf["odom0_config"]
@@ -614,32 +623,36 @@ class TestLocalisation:
         sensor_max = float(re.search(r"<max>([\d.]+)</max>", text).group(1))
         assert amcl["laser_max_range"] <= sensor_max
 
-    def test_gazebo_odometry_is_encoder_derived_not_ground_truth(self):
-        """odometry_source must be 0 (ENCODER). 1 is WORLD.
+    def test_wheel_odometry_is_not_ground_truth(self):
+        """The stack's /odom must come from the wheels, never from the simulator's pose.
 
-        gazebo_plugins' ROS 2 GazeboRosDiffDrive declares
-            enum OdomSource { ENCODER = 0, WORLD = 1 };
-
-        This was previously set to 1 with a comment asserting that meant
-        ENCODER. It does not. WORLD publishes the simulator's exact pose as
-        odometry, so wheel odometry would have been drift-free, the EKF and
-        AMCL would have had nothing to correct, and every localisation number
-        in the docs would have been meaningless — while looking excellent.
-        Nothing in any log flags it.
+        Under Gazebo Classic this was odometry_source, where 1 meant WORLD and
+        silently published ground truth as odometry; this file once set it,
+        with a comment claiming it meant ENCODER. gz-sim has no such switch:
+        DiffDrive integrates the wheel joints, and ground truth comes from a
+        separate OdometryPublisher system. What can still go wrong is wiring,
+        so this pins it: DiffDrive feeds odom_covariance, which publishes /odom,
+        and the ground-truth topic is a different one that only pose_logger reads.
         """
         text = GAZEBO_XACRO.read_text(encoding="utf-8")
-        match = re.search(r"<odometry_source>\s*(\d+)\s*</odometry_source>", text)
-        assert match, "odometry_source is unset; the plugin default is ENCODER but be explicit"
-        assert match.group(1) == "0", (
-            "odometry_source is %s (WORLD = simulator ground truth); it must be 0 (ENCODER) "
-            "or the localisation evaluation measures nothing" % match.group(1)
-        )
+        odom_topics = re.findall(r"<odom_topic>([^<]+)</odom_topic>", text)
+        assert len(odom_topics) == 2, "expected DiffDrive and OdometryPublisher, found %s" % odom_topics
+        diff_drive = text.split("gz::sim::systems::DiffDrive")[1].split("</plugin>")[0]
+        wheel_topic = re.search(r"<odom_topic>([^<]+)</odom_topic>", diff_drive).group(1)
+        ground_truth = [t for t in odom_topics if t != wheel_topic]
+        assert ground_truth == ["/ground_truth/pose"]
+
+        relay = _load_yaml(SRC / "amr_bringup" / "config" / "odom_covariance.yaml")
+        relay = relay["odom_covariance"]["ros__parameters"]
+        assert relay["input_topic"] == wheel_topic and relay["output_topic"] == "/odom"
+        ekf = _load_yaml(EKF_PARAMS)["ekf_filter_node"]["ros__parameters"]
+        assert ekf["odom0"] == "/odom"
 
     def test_casters_clear_the_floor(self):
         """Casters must sit above the floor so the drive wheels carry the load.
 
         With caster bottoms and wheel bottoms both at exactly z = 0, the load
-        split is numerically indeterminate: ODE resolves the stiff sphere-plane
+        split is numerically indeterminate: the contact solver resolves the stiff sphere-plane
         contacts first, the drive wheels lose normal force, and the robot sits
         still while its wheels spin at exactly the commanded rate. Every plugin
         reports success and no log line is wrong.
@@ -828,3 +841,132 @@ class TestMissionWaypoints:
                     "waypoint at x=%.2f sits on the pallet spanning [%.1f, %.1f]"
                     % (w["x"], x0, x1)
                 )
+
+
+class TestGzSim:
+    """The Gazebo Classic to gz-sim migration's own failure modes.
+
+    Each of these is silent at runtime: a topic that is not bridged simply
+    never arrives, a system that is not loaded simply does nothing, and a
+    static model moved by the fault injector stays where it was as far as the
+    sensors are concerned.
+    """
+
+    @staticmethod
+    def _bridge():
+        return {entry["gz_topic_name"]: entry for entry in _load_yaml(GZ_BRIDGE)}
+
+    def test_every_gz_topic_the_stack_needs_is_bridged(self):
+        bridge = self._bridge()
+        for gz_topic in ("/clock", "/odom_raw", "/imu/data", "/lidar_3d/points", "/joint_states",
+                         "/ground_truth/pose"):
+            assert gz_topic in bridge, "%s is not bridged into ROS" % gz_topic
+            assert bridge[gz_topic]["direction"] == "GZ_TO_ROS"
+        assert bridge["/cmd_vel"]["direction"] == "ROS_TO_GZ"
+
+    def test_sensor_topics_in_the_urdf_match_the_bridge(self):
+        text = GAZEBO_XACRO.read_text(encoding="utf-8")
+        topics = set(re.findall(r"<topic>([^<]+)</topic>", text))
+        bridge = self._bridge()
+        assert {"/imu/data", "/joint_states", "/cmd_vel", "/lidar_3d"} <= topics
+        assert "/lidar_3d/points" in bridge
+        # The 2D LiDAR topic is the scan_topic xacro argument, bridged by the
+        # launch file because it moves when the dropout relay is in the path.
+        assert "/$(arg scan_topic)" in topics
+        launch = (SRC / "amr_bringup" / "launch" / "simulation.launch.py").read_text(encoding="utf-8")
+        assert "@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan" in launch
+
+    def test_every_sensor_names_its_tf_frame(self):
+        """Without gz_frame_id the message carries a scoped gz name that is not in TF."""
+        text = GAZEBO_XACRO.read_text(encoding="utf-8")
+        sensors = re.findall(r'<gazebo reference="([^"]+)">\s*<sensor', text)
+        assert sorted(sensors) == ["imu_link", "lidar_2d_link", "lidar_3d_link"]
+        for link in sensors:
+            block = text.split('<gazebo reference="%s">' % link)[1].split("</gazebo>")[0]
+            assert "<gz_frame_id>%s</gz_frame_id>" % link in block
+
+    def test_world_loads_the_systems_the_stack_relies_on(self):
+        world = WORLD.read_text(encoding="utf-8")
+        for system in ("Physics", "UserCommands", "SceneBroadcaster", "Sensors", "Imu"):
+            assert "gz::sim::systems::%s" % system in world, "world does not load %s" % system
+        assert "<render_engine>ogre2</render_engine>" in world
+
+    def test_world_fetches_nothing_from_the_network(self):
+        """model:// includes resolve through Fuel in gz-sim; CI must not depend on that."""
+        world = WORLD.read_text(encoding="utf-8")
+        assert "<include>" not in world and "model://" not in world
+        assert "gazebo.material" not in world, "Classic material scripts do not exist in gz-sim"
+
+    def test_world_keeps_the_classic_physics_step(self):
+        world = WORLD.read_text(encoding="utf-8")
+        assert "<max_step_size>0.001</max_step_size>" in world
+
+    def test_faulted_models_exist_and_are_dynamic(self):
+        """gz-sim does not move a static model's collision or visual on set_pose.
+
+        Measured: a static pallet teleported 2.35 m ahead of the robot reported
+        its new pose to `gz model -p` while the forward LiDAR beams still read
+        16 m, so the robot would have driven through it. Every model a fault
+        moves must therefore be dynamic.
+        """
+        world = WORLD.read_text(encoding="utf-8")
+        schedules = [SRC / "amr_bringup" / "config" / name
+                     for name in ("fault_schedule.yaml", "integration_fault.yaml")]
+        moved = {f["model"] for path in schedules for f in _load_yaml(path)["faults"] if "model" in f}
+        assert moved - {"warehouse_amr"}, "no fault moves a prop; the check would be vacuous"
+        for model in moved - {"warehouse_amr"}:
+            match = re.search(r'<model name="%s">\s*<static>(\w+)</static>' % re.escape(model), world)
+            assert match, "%s is moved by a fault but is not in the world" % model
+            assert match.group(1) == "false", "%s is static; set_pose would not move it" % model
+
+    def test_launch_bridges_the_set_pose_service(self):
+        launch = (SRC / "amr_bringup" / "launch" / "simulation.launch.py").read_text(encoding="utf-8")
+        injector = (SRC / "amr_bringup" / "amr_bringup" / "nodes" / "fault_injector.py").read_text(
+            encoding="utf-8")
+        assert "/world/warehouse/set_pose@ros_gz_interfaces/srv/SetEntityPose" in launch
+        assert '"/world/warehouse/set_pose"' in injector
+
+
+class TestJazzyNav2:
+    """Humble configuration that Jazzy rejects, sometimes without saying so."""
+
+    def test_no_builtin_bt_plugins_are_listed(self, nav2):
+        """Jazzy loads the built-in BT nodes itself; listing them registers each twice."""
+        assert "plugin_lib_names" not in nav2["bt_navigator"]["ros__parameters"]
+
+    def test_plugin_names_use_the_scoped_form(self):
+        for line in NAV2_PARAMS.read_text(encoding="utf-8").splitlines():
+            code = line.split("#", 1)[0]
+            if "plugin:" in code:
+                value = code.split("plugin:", 1)[1].strip().strip('"')
+                assert "/" not in value, "Humble-style plugin name: %s" % value
+
+    def test_progress_checker_uses_the_plural_key(self, nav2):
+        params = nav2["controller_server"]["ros__parameters"]
+        assert "progress_checker_plugin" not in params
+        assert params["progress_checker_plugins"] == ["progress_checker"]
+
+    def test_behaviour_trees_declare_btcpp_v4(self):
+        for path in (SRC / "amr_navigation" / "behavior_trees").glob("*.xml"):
+            root = ET.parse(path).getroot()
+            assert root.get("BTCPP_format") == "4", "%s is not declared as BT.CPP v4" % path.name
+
+    def test_rotate_to_goal_tolerance_is_set_where_dwb_reads_it(self, dwb):
+        """RotateToGoal reads FollowPath.xy_goal_tolerance, not RotateToGoal.xy_goal_tolerance.
+
+        The misnamed key was silently ignored, so the critic ran on its 0.25 m
+        default against a 0.20 m goal checker. In the annulus between them DWB
+        rejects every forward trajectory and the goal checker never succeeds:
+        measured on gz-sim, the robot stopped 0.24 m short of every goal.
+        """
+        for key in ("RotateToGoal.xy_goal_tolerance", "RotateToGoal.trans_stopped_velocity"):
+            assert key not in dwb, "%s is not a parameter DWB reads; set it on FollowPath" % key
+        assert "xy_goal_tolerance" in dwb and "trans_stopped_velocity" in dwb
+
+    def test_translation_ends_inside_the_goal_checker_radius(self, nav2, dwb):
+        checker = nav2["controller_server"]["ros__parameters"]["general_goal_checker"]
+        assert dwb["xy_goal_tolerance"] < checker["xy_goal_tolerance"], (
+            "RotateToGoal stops translation at %.2f m but the goal checker needs %.2f m: "
+            "a robot can stop in between and never finish" % (dwb["xy_goal_tolerance"],
+                                                              checker["xy_goal_tolerance"])
+        )

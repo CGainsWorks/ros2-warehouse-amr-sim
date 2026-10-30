@@ -59,7 +59,7 @@
   a new goal arrives, so a robot mid-spin does not finish spinning before
   accepting new work.
 -->
-<root main_tree_to_execute="MainTree">
+<root BTCPP_format="4" main_tree_to_execute="MainTree">
   <BehaviorTree ID="MainTree">
     <RecoveryNode number_of_retries="6" name="NavigateRecovery">
 

@@ -1,0 +1,22 @@
+# The induced failure the CI integration test runs (src/amr_bringup/test).
+#
+# A loaded pallet is set down on the robot's destination while it is driving
+# there, and taken away again 45 s later. The 2D LiDAR only ever sees the
+# pallet's near face, so the global planner still finds a path to the goal
+# behind it; it is the controller that cannot get there. The robot closes up
+# to the pallet, stops making progress, FollowPath fails, and the behaviour
+# tree has to walk its recovery ladder until the pallet goes. Removing it is
+# what lets the mission then succeed, so a pass shows both halves: a recovery
+# fired, and the robot got going again afterwards.
+#
+# Times are seconds from the navigation goal starting to execute (the injector
+# arms on Nav2's action status). The 10.65 m leg takes about 25 s at 0.45 m/s,
+# so the pallet lands with the robot about 4 m in and the destination in clear
+# view. The robot reaches it at about 25 s and the pallet stays until 55 s,
+# twice the 10 s the progress checker allows. Measured on shorter blocks: at
+# 8 s the robot never reached the pallet, and at 25 s it was removed just as
+# the progress checker was about to fire, so in neither case did a recovery
+# run.
+faults:
+  - {at: 10.0, type: block_goal, model: fault_pallet, x: -1.35, y: 0.0, z: 0.475,
+     restore_after: 45.0, restore_x: 0.0, restore_y: 25.0}

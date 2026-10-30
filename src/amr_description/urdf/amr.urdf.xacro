@@ -46,7 +46,7 @@
        does not.
 
        Sized so both casters and both wheels bottom out at exactly z = 0 and the
-       load split between them is numerically indeterminate. ODE resolves the
+       load split between them is numerically indeterminate. the contact solver resolves the
        stiff sphere-plane point contacts first, lifting the chassis by a
        hair, and the drive wheels end up carrying no normal force. They then
        spin at exactly the commanded rate — 3.000 rad/s for 0.3 m/s — while the
@@ -133,6 +133,13 @@
       <child link="${prefix}_wheel_link"/>
       <origin xyz="0 ${reflect * wheel_separation / 2.0} 0" rpy="0 0 0"/>
       <axis xyz="0 1 0"/>
+      <!-- 25 Nm, the Classic plugin's max_wheel_torque. Torque to accelerate
+           65 kg at 1.0 m/s^2 is 32.5 N per wheel, or 3.25 Nm at a 0.10 m
+           radius, so this leaves ample margin for a ramp or a floor seam.
+           gz-sim's DiffDrive commands wheel velocity and DART holds it with at
+           most this effort, so the limit lives on the joint now. velocity is
+           required by the URDF schema; 30 rad/s (3 m/s) is never reached. -->
+      <limit effort="25.0" velocity="30.0"/>
       <dynamics damping="0.05" friction="0.1"/>
     </joint>
 
@@ -144,7 +151,6 @@
       <mu2>0.8</mu2>
       <kp>1000000.0</kp>
       <kd>100.0</kd>
-      <material>Gazebo/DarkGrey</material>
     </gazebo>
   </xacro:macro>
 
@@ -170,7 +176,6 @@
     <gazebo reference="${prefix}_caster_link">
       <mu1>0.02</mu1>
       <mu2>0.02</mu2>
-      <material>Gazebo/DarkGrey</material>
     </gazebo>
   </xacro:macro>
 

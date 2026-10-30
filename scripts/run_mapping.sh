@@ -25,7 +25,7 @@ cleanup() {
     '{linear: {x: 0.0}, angular: {z: 0.0}}' > /dev/null 2>&1 || true
   [[ -n "${SIM_PID:-}" ]] && kill -- -"${SIM_PID}" 2>/dev/null || true
   [[ -n "${SLAM_PID:-}" ]] && kill -- -"${SLAM_PID}" 2>/dev/null || true
-  pkill -f gzserver 2>/dev/null || true
+  pkill -f "gz sim" 2>/dev/null || true
   wait 2>/dev/null || true
   exit "${status}"
 }

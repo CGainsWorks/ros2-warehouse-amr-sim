@@ -11,7 +11,7 @@ set -euo pipefail
 
 RESULTS="${1:-results}"
 TIMEOUT_STARTUP="${TIMEOUT_STARTUP:-180}"
-# 900 s. Gazebo runs at roughly 0.3-0.5x real time here, so a six-waypoint
+# 900 s. gz-sim runs at roughly 0.3-0.6x real time here, so a six-waypoint
 # mission over ~50 m does not fit in 400 s even when navigation behaves.
 TIMEOUT_MISSION="${TIMEOUT_MISSION:-900}"
 
@@ -21,10 +21,11 @@ cleanup() {
   local status=$?
   echo "--- shutting down"
   # Kill the whole process group: ros2 launch spawns children that do not
-  # always die with their parent, and a leftover gzserver holds port 11345 and
+  # always die with their parent, and a leftover gz sim server keeps
+  # publishing the old world on the same gz partition, which
   # makes the next run fail with a misleading error.
   [[ -n "${SIM_PID:-}" ]] && kill -- -"${SIM_PID}" 2>/dev/null || true
-  pkill -f gzserver 2>/dev/null || true
+  pkill -f "gz sim" 2>/dev/null || true
   wait 2>/dev/null || true
   exit "${status}"
 }

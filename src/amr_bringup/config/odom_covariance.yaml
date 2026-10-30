@@ -1,0 +1,13 @@
+# Covariance stamped onto the bridged wheel odometry.
+#
+# These are the values the Gazebo Classic diff drive plugin advertised
+# (covariance_x, covariance_y, covariance_yaw), carried over unchanged so the
+# EKF weighs the wheels exactly as it did before the migration. The EKF reads
+# them, so they have to be honest rather than optimistic.
+odom_covariance:
+  ros__parameters:
+    input_topic: /odom_raw
+    output_topic: /odom
+    covariance_x: 0.001
+    covariance_y: 0.001
+    covariance_yaw: 0.01

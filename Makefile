@@ -7,7 +7,7 @@
 #            scan-matching accuracy.
 #              make test  make segmentation  make scan-odometry  make world
 #
-#   SIMULATED  need ROS 2 Humble and Gazebo, so in practice the Docker image.
+#   SIMULATED  need ROS 2 Jazzy and gz-sim Harmonic, so in practice the Docker image.
 #              Produce the end-to-end localisation and recovery numbers.
 #                make demo  make map  make eval  make faults
 #
@@ -57,7 +57,7 @@ check: test segmentation scan-odometry  ## Everything that runs without ROS
 	@echo "All offline checks passed. Results in $(RESULTS)/."
 
 # ---------------------------------------------------------------------------
-# Simulated. These require a sourced ROS 2 Humble workspace.
+# Simulated. These require a sourced ROS 2 Jazzy workspace.
 # ---------------------------------------------------------------------------
 
 .PHONY: build
@@ -65,7 +65,7 @@ build:  ## colcon build the workspace
 	colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
 
 .PHONY: demo
-demo:  ## Launch Gazebo with the full stack
+demo:  ## Launch gz-sim with the full stack
 	ros2 launch amr_bringup simulation.launch.py headless:=false use_rviz:=true
 
 .PHONY: headless
@@ -87,6 +87,10 @@ openloop:  ## Measure localisation with Nav2 out of the loop (the harness that i
 .PHONY: audit
 audit:  ## Path length per pose source: which link in the chain lost the motion
 	$(PYTHON) analysis/odometry_audit.py --results $(RESULTS)
+
+.PHONY: integration
+integration:  ## The two headless integration tests CI runs (launch_testing)
+	./scripts/run_integration_tests.sh $(RESULTS)/integration
 
 .PHONY: faults
 faults:  ## Run the mission with induced failures, then report the recovery matrix

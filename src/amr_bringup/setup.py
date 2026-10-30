@@ -48,6 +48,7 @@ setup(
             "fault_injector = amr_bringup.nodes.fault_injector:main",
             "openloop_driver = amr_bringup.nodes.openloop_driver:main",
             "scan_relay = amr_bringup.nodes.scan_relay:main",
+            "odom_covariance = amr_bringup.nodes.odom_covariance:main",
         ],
     },
 )

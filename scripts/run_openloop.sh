@@ -26,7 +26,7 @@ cleanup() {
   local status=$?
   echo "--- shutting down"
   [[ -n "${SIM_PID:-}" ]] && kill -- -"${SIM_PID}" 2>/dev/null || true
-  pkill -f gzserver 2>/dev/null || true
+  pkill -f "gz sim" 2>/dev/null || true
   wait 2>/dev/null || true
   exit "${status}"
 }

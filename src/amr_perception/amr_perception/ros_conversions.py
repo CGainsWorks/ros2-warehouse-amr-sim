@@ -33,7 +33,13 @@ _PALETTE = [
 
 
 def pointcloud2_to_xyz(msg: PointCloud2, skip_nans: bool = True) -> np.ndarray:
-    """Extract an (N, 3) float64 array of xyz from a ``PointCloud2``."""
+    """Extract an (N, 3) float64 array of finite xyz from a ``PointCloud2``.
+
+    Non-finite points are dropped as well as NaNs. gz-sim's gpu_lidar emits a
+    point for every beam, and a beam with no return comes out at infinity
+    rather than NaN, which ``skip_nans`` does not catch; one infinite point is
+    enough to blow up the voxel grid's bounds.
+    """
     raw = point_cloud2.read_points(msg, field_names=("x", "y", "z"), skip_nans=skip_nans)
 
     arr = np.asarray(list(raw)) if not isinstance(raw, np.ndarray) else raw
@@ -41,14 +47,15 @@ def pointcloud2_to_xyz(msg: PointCloud2, skip_nans: bool = True) -> np.ndarray:
     if arr.dtype.names is not None:  # structured array
         if len(arr) == 0:
             return np.empty((0, 3), dtype=np.float64)
-        return np.stack(
+        xyz = np.stack(
             [arr["x"].astype(np.float64), arr["y"].astype(np.float64), arr["z"].astype(np.float64)],
             axis=1,
         )
-
-    if arr.size == 0:
-        return np.empty((0, 3), dtype=np.float64)
-    return np.asarray(arr, dtype=np.float64).reshape(-1, 3)
+    else:
+        if arr.size == 0:
+            return np.empty((0, 3), dtype=np.float64)
+        xyz = np.asarray(arr, dtype=np.float64).reshape(-1, 3)
+    return xyz[np.isfinite(xyz).all(axis=1)]
 
 
 def xyz_to_pointcloud2(points: np.ndarray, frame_id: str, stamp) -> PointCloud2:
