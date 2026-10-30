@@ -2,11 +2,18 @@
 #
 #   docker compose -f docker/docker-compose.yml run --rm check   # offline metrics
 #   docker compose -f docker/docker-compose.yml up demo          # headless sim
-#   docker compose -f docker/docker-compose.yml up gui           # with Gazebo + RViz
+#   docker compose -f docker/docker-compose.yml up gui           # with the gz GUI
+#   docker compose -f docker/docker-compose.yml up fleet         # sim + VDA 5050 over MQTT
 #
 # `check` is the one to reach for first: it needs no display, no GPU and no
-# Gazebo, and it reproduces every segmentation and scan-matching number in the
-# README in a few seconds.
+# simulator, and it reproduces every segmentation and scan-matching number in
+# the README in a few seconds.
+#
+# Isolation. ROS 2 discovery and gz-transport both multicast, and containers on
+# one Docker network can hear each other: two simulations on one host will
+# happily exchange /clock, /tf and /cmd_vel. Every service therefore keeps ROS
+# discovery and gz-transport on the container's own loopback. Only MQTT, which
+# is the fleet interface and meant to cross the network, leaves the container.
 
 x-common: &common
   build:
@@ -17,10 +24,11 @@ x-common: &common
   # the default 64 MB causes intermittent discovery failures between the dozen
   # or so nodes this stack runs.
   shm_size: "2gb"
-  environment:
-    - ROS_DOMAIN_ID=42
-    # Containers on one host must not discover each other's nodes.
-    - ROS_LOCALHOST_ONLY=1
+  environment: &env
+    ROS_DOMAIN_ID: "42"
+    ROS_AUTOMATIC_DISCOVERY_RANGE: LOCALHOST
+    GZ_IP: 127.0.0.1
+    GZ_PARTITION: warehouse_amr
   volumes:
     - ../results:/ws/results
 
@@ -36,21 +44,38 @@ services:
     command:
       ["ros2", "launch", "amr_bringup", "simulation.launch.py", "headless:=true"]
 
-  # Simulation with the Gazebo GUI and RViz. Needs an X server on the host;
+  # Simulation with the gz-sim GUI and RViz. Needs an X server on the host;
   # on Linux, `xhost +local:docker` first.
   gui:
     <<: *common
     environment:
-      - ROS_DOMAIN_ID=42
-      - ROS_LOCALHOST_ONLY=1
-      - DISPLAY=${DISPLAY:-:0}
-      - QT_X11_NO_MITSHM=1
+      <<: *env
+      DISPLAY: ${DISPLAY:-:0}
+      QT_X11_NO_MITSHM: "1"
     volumes:
       - ../results:/ws/results
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
     command:
       ["ros2", "launch", "amr_bringup", "simulation.launch.py",
        "headless:=false", "use_rviz:=true"]
+
+  # MQTT broker for the VDA 5050 interface. The image ships a no-auth config
+  # listening on 1883, which is what a local test bench wants; a deployment
+  # would add TLS and per-vehicle credentials.
+  mosquitto:
+    image: eclipse-mosquitto:2.0.20
+    command: ["mosquitto", "-c", "/mosquitto-no-auth.conf"]
+    ports:
+      - "1883:1883"
+
+  # The simulated vehicle behind its VDA 5050 adapter. Publish an order on
+  # uagv/v2/CGainsWorks/amr-001/order and watch .../state; see docs/fleet-interface.md.
+  fleet:
+    <<: *common
+    depends_on:
+      - mosquitto
+    command:
+      ["ros2", "launch", "amr_fleet", "fleet.launch.py", "broker_host:=mosquitto"]
 
   # Mapping run. Writes the map into the mounted results directory.
   map:
@@ -73,3 +98,8 @@ services:
   faults:
     <<: *common
     command: ["./scripts/run_faults.sh", "/ws/results"]
+
+  # The two headless integration tests CI runs, against the built image.
+  integration:
+    <<: *common
+    command: ["./scripts/run_integration_tests.sh", "/ws/results/integration"]

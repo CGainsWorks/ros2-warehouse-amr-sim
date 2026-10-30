@@ -18,6 +18,7 @@ _PACKAGE_DIRS = [
     REPO_ROOT / "src" / "amr_perception",
     REPO_ROOT / "src" / "amr_localisation",
     REPO_ROOT / "src" / "amr_bringup",
+    REPO_ROOT / "src" / "amr_fleet",
     REPO_ROOT,
 ]
 

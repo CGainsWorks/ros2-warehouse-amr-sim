@@ -1,0 +1,14 @@
+# VDA 5050 adapter identity and broker. The topic prefix is
+#   uagv/v2/<manufacturer>/<serial_number>/{order,instantActions,state,connection}
+# broker_host and broker_port are overridden by fleet.launch.py arguments.
+vda5050_adapter:
+  ros__parameters:
+    manufacturer: CGainsWorks
+    serial_number: amr-001
+    # The map every nodePosition must be on. One map, one vehicle.
+    map_id: warehouse
+    broker_host: localhost
+    broker_port: 1883
+    # Seconds between unsolicited state messages. VDA 5050 asks for at most
+    # 30 s; state is also sent on every change.
+    state_period: 1.0
