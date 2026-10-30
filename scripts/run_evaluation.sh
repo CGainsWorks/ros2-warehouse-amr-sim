@@ -116,6 +116,14 @@ python3 analysis/localisation_error.py \
   --title "AMCL against Gazebo ground truth"
 
 echo
+python3 analysis/localisation_error.py \
+  --estimate "${RESULTS}/ekf_odom.csv" \
+  --reference "${RESULTS}/ground_truth.csv" \
+  --output "${RESULTS}/ekf_error.json" \
+  --align \
+  --title "EKF against ground truth"
+
+echo
 # --align, because wheel odometry is in the odom frame whose origin is the
 # robot's start pose, not the map origin. Without it a flawless odometry scores
 # an ATE equal to the distance between the two frames — 12.0 m here, constant to

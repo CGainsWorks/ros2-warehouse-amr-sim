@@ -919,6 +919,21 @@ class TestGzSim:
             assert match, "%s is moved by a fault but is not in the world" % model
             assert match.group(1) == "false", "%s is static; set_pose would not move it" % model
 
+    def test_wheel_contact_is_a_thin_disc(self):
+        """DART puts a cylinder's floor contacts at its rim edges.
+
+        With the 50 mm tyre as the collision, the inner edges carried the load
+        and the effective track was 0.45 m against DiffDrive's 0.50 m: one
+        commanded turn in place came out as 397 degrees by ground truth and 358
+        by wheel odometry. The contact must be thin enough that the track error
+        stays under 1%.
+        """
+        width = _xacro_property("wheel_contact_width")
+        separation = _xacro_property("wheel_separation")
+        assert width < _xacro_property("wheel_width")
+        assert width / separation < 0.01
+        assert 'length="${wheel_contact_width}"' in URDF.read_text(encoding="utf-8")
+
     def test_launch_bridges_the_set_pose_service(self):
         launch = (SRC / "amr_bringup" / "launch" / "simulation.launch.py").read_text(encoding="utf-8")
         injector = (SRC / "amr_bringup" / "amr_bringup" / "nodes" / "fault_injector.py").read_text(

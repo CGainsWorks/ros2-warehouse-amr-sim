@@ -35,6 +35,17 @@
        from what the planner assumes. -->
   <xacro:property name="wheel_radius"    value="0.10"/>
   <xacro:property name="wheel_width"     value="0.05"/>
+  <!-- The wheel's COLLISION is a 4 mm disc, not the 50 mm tyre the visual
+       shows. DART puts a cylinder's contacts with the floor at its rim edges,
+       and with a 50 mm tyre the inner edges carry the load, so the effective
+       track was 0.45 m against the 0.50 m DiffDrive integrates with. Measured
+       on gz-sim: commanded one full turn in place, wheel odometry reported
+       358 degrees while ground truth turned 397, an 11% overspin that wrecked
+       wheel-odometry heading on every in-place turn. With a 4 mm contact
+       width the track is within 1% (358 against 361). Classic's ODE did not
+       do this. The lateral envelope is unchanged: the disc sits in the same
+       plane as the tyre and inside the chassis footprint. -->
+  <xacro:property name="wheel_contact_width" value="0.004"/>
   <xacro:property name="wheel_mass"      value="2.0"/>
   <xacro:property name="wheel_separation" value="0.50"/>
 
@@ -123,7 +134,7 @@
       </visual>
       <collision>
         <origin xyz="0 0 0" rpy="${pi/2.0} 0 0"/>
-        <geometry><cylinder radius="${wheel_radius}" length="${wheel_width}"/></geometry>
+        <geometry><cylinder radius="${wheel_radius}" length="${wheel_contact_width}"/></geometry>
       </collision>
       <xacro:cylinder_inertia m="${wheel_mass}" r="${wheel_radius}" h="${wheel_width}"/>
     </link>
